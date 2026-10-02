@@ -537,6 +537,7 @@ cat <<EOF
 Done. Next:
   ./run_server.sh                         start it (Ctrl-C stops it)
   curl -s http://localhost:$PORT/health   check: experiment, n_reservoirs, auth_configured
+  http://localhost:$PORT/viewer/          the viewer, served by the same process
 
 Give the LLM:
   http://<this host>:$PORT/skill          how to use every route

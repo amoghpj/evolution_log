@@ -314,7 +314,9 @@ The skill cannot be generated from a contract this loose.
 `GET` read routes, `POST /events` (validate -> append -> recompute projections
 -> git commit), `GET /openapi.json`, `GET /skill` generating the operator
 instructions from the Pydantic models. Viewer served from the same origin,
-which also removes the `file://` fetch problem `serve.sh` exists to solve.
+which also removes the `file://` fetch problem `serve.sh` existed to solve.
+(Done 2026-10-02: `GET /viewer/`, and `serve.sh` removed -- it served the
+whole checkout, `secrets/` included.)
 
 ---
 

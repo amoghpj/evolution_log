@@ -18,5 +18,5 @@ set -a; . "$ROOT/secrets/server.env"; set +a
 export LOG_REPO_PATH="$ROOT"
 
 cd "$ROOT/server"
-echo "serving $(LOG_REPO_PATH="$ROOT" python3 -c 'import json,os;e=json.load(open(os.environ["LOG_REPO_PATH"]+"/evolution_log.json")).get("experiment",{});print(e.get("name"),"--",e.get("title"))' 2>/dev/null || echo "$ROOT") on $BIND_HOST:$PORT"
+echo "serving $(LOG_REPO_PATH="$ROOT" python3 -c 'import json,os;e=json.load(open(os.environ["LOG_REPO_PATH"]+"/evolution_log.json")).get("experiment",{});print(e.get("name"),"--",e.get("title"))' 2>/dev/null || echo "$ROOT") on $BIND_HOST:$PORT -- viewer at http://localhost:$PORT/viewer/"
 exec "$UVICORN" app.main:app --host "$BIND_HOST" --port "$PORT"

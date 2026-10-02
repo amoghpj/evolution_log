@@ -180,10 +180,9 @@
     <div id="err"><div class="card">
       <h2>Can't read evolution_log.json</h2>
       <p class="sub" id="errmsg"></p>
-      <p>This viewer reads the log over http so it always shows the live file. Start a server in the experiment folder:</p>
-      <code>cd "or05-evolution-phase-2"
-./serve.sh</code>
-      <p class="sub">Then open <b>http://localhost:8777/viewer.html</b>. Opening this file directly with a double-click will not work — browsers block <span class="mono">fetch()</span> on <span class="mono">file://</span> URLs.</p>
+      <p>The log server serves this viewer and the live log together. Start it in the experiment folder:</p>
+      <code>./run_server.sh</code>
+      <p class="sub">Then open <b>http://&lt;host&gt;:&lt;port&gt;/viewer/</b> (port 8556 unless you chose another). Opening this file directly with a double-click will not work — browsers block <span class="mono">fetch()</span> on <span class="mono">file://</span> URLs.</p>
     </div></div>
   </div>
   <aside id="detail"></aside>

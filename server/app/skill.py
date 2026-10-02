@@ -486,7 +486,10 @@ def _flatten_routes(routes) -> list:
     out = []
     for r in routes:
         if _looks_like_api_route(r):
-            out.append(r)
+            # A route hidden from the OpenAPI schema (the /viewer pages, for
+            # people rather than LLM clients) is hidden from the skill too.
+            if getattr(r, "include_in_schema", True):
+                out.append(r)
             continue
         nested = getattr(r, "original_router", None) or r
         sub_routes = getattr(nested, "routes", None)

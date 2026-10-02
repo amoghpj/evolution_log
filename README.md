@@ -10,7 +10,7 @@ init_experiment.sh      run once per checkout: writes the log, a token, the serv
 run_server.sh           start the server
 server/                 the FastAPI app (server/app) and its tests (server/tests)
 schema/  tools/         the log's schema and the tools that validate it
-viewer.html  serve.sh   a browser view of the log
+viewer.html             a browser view of the log, served by the server at /viewer/
 dashboard.py            the per-rig dashboard that serves live pump/OD data at /api/v1/*
 evolver_code/           the eVOLVER controller code and its config validator
 reference/or05_log.json a frozen copy of the OR05 log: the vocabulary new logs start from,
@@ -82,7 +82,8 @@ curl -s http://localhost:8556/health
 ```
 
 `/health` should show your experiment's name, `n_reservoirs` > 0 and
-`auth_configured: true`.
+`auth_configured: true`. The viewer is at `http://<host>:8556/viewer/`, served
+by the same process, so there is nothing else to start.
 
 To keep it running, a systemd user unit (`~/.config/systemd/user/evolver-log.service`):
 

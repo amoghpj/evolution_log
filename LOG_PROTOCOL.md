@@ -282,7 +282,7 @@ and `carry_generations.py --write` modify it.
 | `tools/carry_generations.py` | Reads a finished experiment directory and records `generations_carried_forward`, which a controller restart would otherwise lose. |
 | `tools/test_media.py`, `tools/test_schema.py` | Regression suites for the media model and the schema. |
 | `node tools/test_viewer.js`, `node tools/test_generations.js` | Viewer suites: they extract the pure derivation logic out of `viewer.html` and run it, so a broken viewer fails here rather than in the browser. Run `tools/make_fixture.py` first — it builds a synthetic branched log in `/tmp` that the viewer tests exercise splits and merges against. |
-| `viewer.html` + `serve.sh` | Timeline and pedigree viewer. Needs the http server; `fetch()` is blocked on `file://`. |
+| `viewer.html` | Timeline and pedigree viewer, served by the log server at `/viewer/`. Opening the file directly fails; `fetch()` is blocked on `file://`. |
 
 ### Media model, in one paragraph
 
