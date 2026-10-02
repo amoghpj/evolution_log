@@ -22,6 +22,24 @@ from dash import dcc, html, Input, Output, State, dash_table
 
 from plot import load_config, load_data, TWINDOW
 
+
+def _load_config_validation():
+    """Load evolver_code/config_validation.py by explicit path -- the same
+    load-by-path fallback this file already uses for evolver_api, below.
+    dashboard.py is deployed both beside a rig's own evolver_code checkout
+    and inside a bare log-repo checkout, so a plain `import config_validation`
+    is not guaranteed to find it from either working directory."""
+    import importlib.util
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "evolver_code", "config_validation.py")
+    spec = importlib.util.spec_from_file_location("dashboard_config_validation", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+config_validation = _load_config_validation()
+
 _MONO = "'Courier New', Courier, monospace"
 
 # ─── setup constants ──────────────────────────────────────────────────────────
@@ -1829,15 +1847,63 @@ def handle_write(n_cfg, n_calib, exp_name, evolver_name, ip, calib_name, mode, t
         more = "" if len(type_errors) <= 4 else " (+%d more)" % (len(type_errors) - 4)
         return ("Not written — %d cell(s) are not the right type: %s%s"
                 % (len(type_errors), shown, more)), calib_btn_style
+
+    ## A blank cell round-trips through _coerce_pervial as float("nan") -- this
+    ## file's own convention for "not set" -- but writing that literal nan is
+    ## NOT the same thing to the validator as leaving the key out entirely.
+    ## config_validation.py treats an ABSENT optional live field (e.g.
+    ## growth_interval_multiplier) as "apply the documented default", but an
+    ## explicit nan as a hard "must be a number" problem -- deliberately, so a
+    ## genuinely corrupt nan already on disk is never confused with a field
+    ## nobody touched. Drop the key instead, so a blank cell here means
+    ## exactly what _PERVIAL_DEFAULTS already claims it means.
+    per_vial = [{k: v for k, v in row.items()
+                if not (isinstance(v, float) and not np.isfinite(v))}
+               for row in per_vial]
     cfg["experiment_settings"]["per_vial_settings"] = per_vial
+
+    ## Validate against the SAME shared module custom_script.py and the
+    ## server both use, before a single byte is written. This tab used to
+    ## check only cell TYPES (above) and nothing else -- a config missing a
+    ## required field, or an out-of-range live value, used to write
+    ## successfully and report "Config written", with the real problem only
+    ## ever surfacing later as a SKIPPED/REFUSING line in the rig's own
+    ## stdout, or not at all.
+    try:
+        problems, warnings = config_validation.validate_config(cfg)
+    except config_validation.ModeNotImplemented:
+        ## Not one of the two modes config_validation.py covers (pumpcontrol_ramp,
+        ## alternating_selection) -- same as custom_script.py's own
+        ## report_config_problems: nothing to validate here, write unchecked,
+        ## exactly as this tab always has for calibration/growthcurve/
+        ## chemostat/turbidostat/morbidostat.
+        problems, warnings = [], []
+    if problems:
+        shown = "; ".join(problems[:4])
+        more = "" if len(problems) <= 4 else " (+%d more)" % (len(problems) - 4)
+        return ("Not written — %d problem(s): %s%s"
+                % (len(problems), shown, more)), calib_btn_style
 
     try:
         if os.path.exists("experiment_parameters.yaml"):
             shutil.copyfile("experiment_parameters.yaml",
                             f"experiment_parameters.yaml.{_time.time():.0f}")
-        with open("experiment_parameters.yaml", "w") as f:
-            yaml.safe_dump(cfg, f)
-        return f"Config written ({_time.strftime('%H:%M:%S')}).", calib_btn_style
+        ## Atomic: write beside the real file, then rename over it, so a
+        ## process killed mid-write -- or the rig re-reading the file for its
+        ## own next event cycle -- never sees a half-written file. Same
+        ## reasoning as LIVE_CONFIG.md's "Editing safely while an experiment
+        ## runs" and the server's own config_writer.py, which this tab did
+        ## not previously match (it wrote in place with no rename at all).
+        tmp_path = "experiment_parameters.yaml.tmp"
+        with open(tmp_path, "w") as f:
+            yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+        os.replace(tmp_path, "experiment_parameters.yaml")
+        status = f"Config written ({_time.strftime('%H:%M:%S')})."
+        if warnings:
+            shown = "; ".join(warnings[:3])
+            more = "" if len(warnings) <= 3 else " (+%d more)" % (len(warnings) - 3)
+            status += f" Warnings: {shown}{more}"
+        return status, calib_btn_style
     except Exception as e:
         return f"Error: {e}", calib_btn_style
 
