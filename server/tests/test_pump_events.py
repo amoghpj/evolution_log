@@ -100,7 +100,7 @@ def main():
     ck(tr["testunit/LB-0"]["mL"] == 3.0 and tr["testunit/LB-0"]["vials"] == ["testunit/1", "testunit/3"],
        "LB-0's window total is both vials' low dispenses (%s)" % tr.get("testunit/LB-0"))
     ck(tr["testunit/LB-0"]["complete"] is True, "and complete, since the whole window was read")
-    ck(b["totals_by_line"]["testunit-v03"] == {"low_mL": 1.0, "high_mL": 0.0, "n_events": 1},
+    ck(b["totals_by_line"]["testunit-v03"] == {"low_mL": 1.0, "high_mL": 0.0, "n_events": 1, "complete": True},
        "per-line totals (%s)" % b["totals_by_line"].get("testunit-v03"))
 
     b2 = client.get("/pump_events?window_h=6&events=false").json()
@@ -127,7 +127,7 @@ def main():
     client, _ = wire({1: {"events": [[97.0, 1.0, "low"], [99.5, 1.0, "low"]]}},
                      mutate=swap("testunit-v01", ago(1), vacate=True))
     v1 = client.get("/pump_events?window_h=6").json()["units"]["testunit"]["vials"]["1"]
-    ck(v1["events"][0][3] is None and any("no recorded position" in x["reason"] for x in v1["unattributed"]),
+    ck(v1["events"][0][3] is None and any("does not say where it moved from" in x["reason"] for x in v1["unattributed"]),
        "before a vacate with no previous_vial, v01's vial is unknown: unattributed, not guessed")
     ck(v1["events"][0][4] is None, "and so charged to no bottle")
 
@@ -175,7 +175,9 @@ def main():
         b = client.get("/pump_events").json()
         u = b["units"]["testunit"]
         ck(u["ok"] is False and needle in u["reason"], "%s rig: refused with the reason (%s)" % (label, u.get("reason", "")[:80]))
-        ck(b["totals_by_reservoir"] == {} and b["notes"], "%s rig: no totals, and a note saying what was not measured" % label)
+        ck(b["totals_by_reservoir"] == {} and b["complete"] is False
+           and "testunit was not read" in b["incomplete_because"],
+           "%s rig: no totals, and the response says it is incomplete and why" % label)
 
     # ── 6. the query itself ──────────────────────────────────────────────
     client, _ = wire({1: {"events": []}})
