@@ -31,7 +31,9 @@ _slots = threading.BoundedSemaphore(EVENTS_CONCURRENCY)
 
 
 @router.get("/pump_events",
-            summary="Every pump dispense in the last N hours, per vial, with its line and reservoir")
+            summary="Every pump dispense in the last N hours, per vial, with its line and reservoir",
+            responses={503: {"description": "Too many /pump_events requests already in flight; "
+                                            "retry shortly"}})
 def get_pump_events(
     window_h: float = Query(
         DEFAULT_WINDOW_H, gt=0, le=MAX_WINDOW_H,
