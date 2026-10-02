@@ -46,6 +46,7 @@ from .config import Settings
 from .line_models import BranchRequest, MergeRequest, RestartRequest, SplitRequest
 from .log_repo import experiment_identity, load_log, load_schema
 from .models import NewEventRequest
+from .pump_events import MAX_WINDOW_H
 
 # The experiment's name, title and units are filled in from the log per
 # request (_render_header) -- never hardcoded, or every server introduces
@@ -973,6 +974,57 @@ def render_skill(app: FastAPI, settings: Settings, event_type: str | None = None
         "last logged event instead of its clock. The draw is then AT MOST the "
         "figure shown and the remaining volume AT LEAST it; `bound_note` says "
         "so. Never quote such a figure as exact."
+    )
+
+    parts.append("## `GET /pump_events` — every dispense in the last N hours\n")
+    parts.append(
+        "Read-only, no auth. Asks each rig for its raw pump log over a window "
+        "ending NOW, and labels every dispense with the culture it went into and "
+        "the bottle it came from. Use it to answer \"what did the pumps actually "
+        "do\" -- per vial, per line, per bottle. For \"how much is left in a "
+        "bottle\", use `GET /media`, which already folds the pumps into that. "
+        "Query parameters:\n"
+    )
+    parts.append(_render_query_params(app, "/pump_events"))
+    parts.append(
+        "Response: `{window, scope, event_fields, units, totals_by_reservoir, "
+        "totals_by_line, notes}`. `units.<unit>.vials.<n>.events` is a list of "
+        "rows whose columns `event_fields` names: `[at, mL, pump, line_id, "
+        "reservoir_id]`. `at` is wall-clock time with an offset, already converted "
+        "from the rig's controller hours, and `pump` is `low` or `high`. Each vial "
+        "also carries `total_mL` by pump, `lines` (every line seen there in the "
+        "window), and `n_events`. `totals_by_reservoir` and `totals_by_line` sum "
+        "the window across vials.\n\n"
+        "**`window_h` is hours back from now, not a rig hour.** The rig's own "
+        "`since_h` means controller hour X since its run began; this route converts "
+        "between the two. Never pass a value read from a rig's `since_h` or "
+        "`elapsed_h` here.\n\n"
+        "**A vial number is not a culture.** `line_id` is whichever line the LOG "
+        "places in that vial at that instant, from t0, termination and "
+        "`hardware_swap` history -- so a vial that changed hands inside the window "
+        "shows both lines, each against its own dispenses. Where the log cannot "
+        "decide (no line recorded there, two at once, or a line whose founding vial "
+        "was never stored), `line_id` and `reservoir_id` are `null` and the vial's "
+        "`unattributed` list says why, with how many events and mL. Report that "
+        "reason; never assign those dispenses to the likeliest line. "
+        "`near_line_change` counts dispenses within 15 min of a recorded line "
+        "change in that vial: the log's times are operator-reported to the minute, "
+        "so those may belong to the neighbouring line.\n\n"
+        "**When a figure is incomplete.** Per unit: `ok: false` with a `reason` "
+        "means nothing was measured there -- say so, and never read a missing unit "
+        "as zero dispensing. `window_truncated: true` means the rig's run began "
+        "inside the window (`run_started_at`); earlier dispenses are in a previous "
+        "run's log, so every total for that unit is a lower bound. `clock_exact: "
+        "false` means every `at` may be LATE by the rig's idle time "
+        "(`clock_note`). `vial_problems` names vials that could not be read or had "
+        "unusable rows. `totals_by_reservoir[...].complete: false` carries "
+        "`incomplete_because`. `quiet` on a vial means it received nothing in the "
+        "window -- a real measurement, and a blocked or dead line looks exactly "
+        "like an idle one.\n\n"
+        "**Size.** One request fetches a summary plus one call per vial from every "
+        "unit; `window_h` is capped at %g. Pass `events=false` for totals only, "
+        "and narrow with `unit`/`vial` (`vial` needs `unit`). A 503 means too many "
+        "of these are already in flight -- retry, don't loop.\n" % MAX_WINDOW_H
     )
 
     parts.append("## Known `event_type`s (live, from this log)\n")

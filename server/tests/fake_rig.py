@@ -149,9 +149,14 @@ def _summary_body(spec: dict) -> dict:
 def _dispenses_body(spec: dict, vial: int, since_h: float) -> dict:
     v = spec["vials"][vial]
     rows: list[Any] = []
+    if "events" in v:
+        # Explicit [time_h, mL, role] rows, filtered the way the real endpoint
+        # filters them (time > since_h), for tests about WHICH events a window
+        # returns rather than what they sum to.
+        rows = [list(r) for r in v["events"] if r[0] > since_h]
     # One event per role carrying the whole volume: the fallback integrates
     # whatever it is handed, and splitting it finer tests nothing extra.
-    if spec["calibrated"]:
+    elif spec["calibrated"]:
         if v.get("low_mL"):
             rows.append([spec["elapsed_h"] - 0.5, v["low_mL"], "low"])
         if v.get("high_mL"):

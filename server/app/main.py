@@ -41,8 +41,8 @@ if sys.version_info < (3, 10):
 from fastapi import FastAPI  # noqa: E402
 
 from .routes import (  # noqa: E402
-    config, events, health, lines, media, registry, reservoirs, skill, vials,
-    viewer, write_config, write_events, write_lines, write_registry,
+    config, events, health, lines, media, pump_events, registry, reservoirs, skill,
+    vials, viewer, write_config, write_events, write_lines, write_registry,
 )
 
 app = FastAPI(
@@ -61,6 +61,7 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(viewer.router)
+app.include_router(pump_events.router)
 app.include_router(lines.router)
 app.include_router(reservoirs.router)
 app.include_router(events.router)
