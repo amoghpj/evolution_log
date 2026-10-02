@@ -36,7 +36,7 @@ for draft 2020-12, before it writes anything.
 **2. Clone and initialise.**
 
 ```
-git clone git@github.com:<you>/evolver-log.git or06
+git clone https://github.com/amoghpj/evolution_log.git or06
 cd or06
 EXPERIMENT=OR06 IDENTITY="OR06 evolution, phase 1" \
 UNITS="patrick plankton" \
