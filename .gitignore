@@ -1,0 +1,20 @@
+.DS_Store
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# editor autosaves and lock files (Emacs lock files are dangling symlinks)
+\#*\#
+.\#*
+*~
+*.swp
+
+# Per-checkout secrets: operator tokens and the server's environment.
+# Written by init_experiment.sh, never committed. Root only, so
+# server/secrets/operators.example.json (the shape, no real token) stays tracked.
+/secrets/
+
+# The server's atomic-write temp file, if a write is interrupted mid-rename
+*.json.tmp
+server.log

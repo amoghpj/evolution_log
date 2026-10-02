@@ -1,0 +1,16 @@
+# Installed into the shared ~/py venv, not a venv local to this repo
+# (operator's instruction: one Python environment across projects). Pinned
+# here anyway so the dependency set is legible and reproducible even though
+# nothing in this repo creates its own environment.
+fastapi
+uvicorn
+pydantic
+jsonschema
+python-multipart
+httpx
+pyyaml          # app/config_writer.py reads/writes experiment_parameters.yaml
+
+# Git operations (health.py, writer.py) shell out to the git CLI directly
+# via subprocess rather than using GitPython -- one obvious way to run a
+# handful of plain commands (rev-parse, add, commit, checkout), no library
+# abstraction needed on top.

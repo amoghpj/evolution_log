@@ -1,0 +1,1413 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OR05 Evolution Provenance</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --panel:#ffffff; --panel-2:#fbfbfa; --ink:#1f1e1c; --ink-2:#57544e;
+    --ink-3:#8a8681; --line:#e3e1dc; --line-2:#d0cdc6;
+    --accent:#b3541e; --accent-soft:#f0e2d7;
+    --lb:#3f7d8c; --m9:#7a5ea8; --ramp:#2f6d54;
+    --pg-band:#c8752f; --pg-target:#8c3a10;
+    --altsel-high:#c0392b; --altsel-low:#2471a3;
+    --ok:#3f7a4a; --warn:#a8761f; --err:#a33a2c;
+    --lane-h:52px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  /* Dark tokens live in two places on purpose: the media query covers the
+     default "follow the system" state, the attribute rule covers an explicit
+     choice. Every token is defined on bare :root above, so neither block is
+     the only definition of any colour. */
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --bg:#16150f; --panel:#1e1d17; --panel-2:#24231c; --ink:#eeece5; --ink-2:#b6b2a8;
+      --ink-3:#807c73; --line:#33312a; --line-2:#45423a;
+      --accent:#e08a4d; --accent-soft:#3a2a1c;
+      --lb:#6fb3c4; --m9:#a98ede; --ramp:#6fc39a;
+      --pg-band:#e0954f; --pg-target:#f2b880;
+    --altsel-high:#e8746a; --altsel-low:#5aa9e0;
+      --altsel-high:#e8746a; --altsel-low:#5aa9e0;
+      --ok:#6fbb80; --warn:#d9a64a; --err:#e0776a;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#16150f; --panel:#1e1d17; --panel-2:#24231c; --ink:#eeece5; --ink-2:#b6b2a8;
+    --ink-3:#807c73; --line:#33312a; --line-2:#45423a;
+    --accent:#e08a4d; --accent-soft:#3a2a1c;
+    --lb:#6fb3c4; --m9:#a98ede; --ramp:#6fc39a;
+    --pg-band:#e0954f; --pg-target:#f2b880;
+    --ok:#6fbb80; --warn:#d9a64a; --err:#e0776a;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans);
+       -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
+
+  header{padding:14px 20px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex:0 0 auto}
+  .titlebar{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  h1{margin:0;font-size:16px;font-weight:650;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:12px}
+  .stats{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:12px;color:var(--ink-2)}
+  .stat b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%;display:inline-block;background:var(--ok);margin-right:5px}
+  .dot.stale{background:var(--warn)} .dot.dead{background:var(--err)}
+
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:11px}
+  .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:7px;overflow:hidden}
+  .seg button{border:0;background:var(--panel-2);color:var(--ink-2);padding:5px 13px;font:inherit;font-size:12.5px;cursor:pointer}
+  .seg button+button{border-left:1px solid var(--line-2)}
+  .seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+  .chip{border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink-2);border-radius:20px;
+        padding:3px 11px;font-size:12px;cursor:pointer;font-family:inherit}
+  .chip[aria-pressed="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+  .grp{display:flex;gap:5px;align-items:center}
+  .grp>span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);margin-right:2px}
+  input[type=search]{border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink);
+        border-radius:7px;padding:5px 10px;font:inherit;font-size:12.5px;width:150px}
+  .spacer{flex:1}
+  .ghost{border:1px solid var(--line-2);background:var(--panel-2);color:var(--ink-2);border-radius:7px;
+        padding:5px 10px;font:inherit;font-size:12.5px;cursor:pointer}
+
+  main{flex:1;display:flex;min-height:0}
+  #stage{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+
+  /* ---- timeline ---- */
+  #timeline{flex:1;display:flex;min-height:0}
+  #labels{flex:0 0 208px;overflow:hidden;border-right:1px solid var(--line);background:var(--panel)}
+  #plotwrap{flex:1;overflow:auto;background:var(--panel-2)}
+  #axiswrap{flex:0 0 auto;display:flex;border-bottom:1px solid var(--line);background:var(--panel)}
+  #axisspacer{flex:0 0 208px;border-right:1px solid var(--line)}
+  #axisclip{flex:1;overflow:hidden}
+  svg{display:block}
+  text{fill:var(--ink-2);font-family:var(--sans)}
+  .lane-row:hover .lane-bg{fill:var(--accent-soft);fill-opacity:.5}
+  .lane-row.sel .lane-bg{fill:var(--accent-soft);fill-opacity:.85}
+  .lid{font-size:12px;fill:var(--ink);font-weight:550;font-family:var(--mono)}
+  .lmeta{font-size:10.5px;fill:var(--ink-3)}
+  .llive{font-size:10.5px;fill:var(--ink-2);font-family:var(--mono)}
+  .ramplab{font-size:8px;fill:var(--panel);font-family:var(--mono);font-weight:700;pointer-events:none}
+  .tick{font-size:10.5px;fill:var(--ink-3)}
+  .gridline{stroke:var(--line);stroke-width:1}
+  .nowline{stroke:var(--accent);stroke-width:1;stroke-dasharray:3 3}
+  .marker{cursor:pointer}
+  .edge{fill:none;stroke:var(--ink-3);stroke-width:1.6;opacity:.8}
+  .edge.merge{stroke-dasharray:4 3}
+  .faciline{stroke:var(--m9);stroke-width:1.4;stroke-dasharray:2 4;opacity:.75}
+
+  /* ---- pedigree ---- */
+  #pedigree{flex:1;min-height:0;background:var(--panel-2)}
+  .node{cursor:pointer}
+  .nlabel{font-size:10px;fill:var(--ink-2);font-family:var(--mono);pointer-events:none}
+  .glabel{font-size:11px;fill:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;pointer-events:none}
+
+  /* ---- detail ---- */
+  aside{flex:0 0 372px;border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:16px 18px}
+  aside h2{margin:0 0 2px;font-size:14px;font-family:var(--mono);font-weight:600}
+  aside h3{margin:20px 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:600}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px}
+  .kv dt{color:var(--ink-3)}
+  .kv dd{margin:0;color:var(--ink);font-variant-numeric:tabular-nums}
+  .ev{border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:8px;background:var(--panel-2)}
+  .ev-h{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+  .ev-t{font-weight:600;font-size:12.5px}
+  .ev-time{font-size:11px;color:var(--ink-3);font-family:var(--mono);margin-left:auto}
+  .ev-note{font-size:12px;color:var(--ink-2);margin-top:6px}
+  .ev-params{margin-top:7px;font-size:11.5px;font-family:var(--mono);color:var(--ink-2)}
+  .ev-params div{display:flex;gap:8px;padding:1px 0}
+  .ev-params span:first-child{color:var(--ink-3);min-width:118px}
+  .miss{margin-top:7px;font-size:11px;color:var(--warn)}
+  .pill{display:inline-block;font-size:10px;padding:1px 7px;border-radius:20px;background:var(--accent-soft);
+        color:var(--accent);font-weight:600;letter-spacing:.02em}
+  .empty{color:var(--ink-3);font-size:13px;padding:6px 0}
+  .lnk{color:var(--accent);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+
+  #err{position:absolute;inset:0;display:none;place-items:center;background:var(--bg);z-index:5;padding:30px}
+  #err .card{max-width:520px;border:1px solid var(--line-2);border-radius:12px;padding:22px 24px;background:var(--panel)}
+  #err h2{margin:0 0 8px;font-size:15px}
+  #err code{display:block;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
+            padding:9px 12px;font-family:var(--mono);font-size:12px;margin:10px 0;color:var(--ink);white-space:pre-wrap}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:7px 20px;border-top:1px solid var(--line);
+          background:var(--panel);font-size:11px;color:var(--ink-3);flex:0 0 auto}
+  .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="titlebar">
+    <h1 id="title">OR05 Evolution Provenance</h1>
+    <span class="sub" id="subtitle"></span>
+    <div class="stats">
+      <span class="stat" id="counts"></span>
+      <span class="stat" id="feeds"></span>
+      <span class="stat"><span class="dot" id="live"></span><span id="livetxt">connecting</span></span>
+    </div>
+  </div>
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="view">
+      <button id="btn-timeline" aria-pressed="true">Timeline</button>
+      <button id="btn-pedigree" aria-pressed="false">Pedigree</button>
+    </div>
+    <div class="grp" id="f-strain"><span>Strain</span></div>
+    <div class="grp" id="f-media"><span>Media</span></div>
+    <div class="grp" id="f-mode"><span>Mode</span></div>
+    <div class="seg" role="group" aria-label="which lineages">
+      <button id="btn-live" aria-pressed="true">Live</button>
+      <button id="btn-all" aria-pressed="false">All</button>
+    </div>
+    <input type="search" id="q" placeholder="Filter lines…" autocomplete="off">
+    <span class="spacer"></span>
+    <button class="ghost" id="density" title="Row height">Compact</button>
+    <button class="ghost" id="theme" title="Theme: system, light, dark">Theme: auto</button>
+    <button class="ghost" id="zoom-out">−</button>
+    <button class="ghost" id="zoom-fit">Fit</button>
+    <button class="ghost" id="zoom-in">+</button>
+    <button class="ghost" id="refresh">Refresh</button>
+  </div>
+</header>
+
+<main>
+  <div id="stage">
+    <div id="axiswrap"><div id="axisspacer"></div><div id="axisclip"><svg id="axis"></svg></div></div>
+    <div id="timeline">
+      <div id="labels"><svg id="labelsvg"></svg></div>
+      <div id="plotwrap"><svg id="plot"></svg></div>
+    </div>
+    <svg id="pedigree" style="display:none"></svg>
+    <div id="err"><div class="card">
+      <h2>Can't read evolution_log.json</h2>
+      <p class="sub" id="errmsg"></p>
+      <p>This viewer reads the log over http so it always shows the live file. Start a server in the experiment folder:</p>
+      <code>cd "or05-evolution-phase-2"
+./serve.sh</code>
+      <p class="sub">Then open <b>http://localhost:8777/viewer.html</b>. Opening this file directly with a double-click will not work — browsers block <span class="mono">fetch()</span> on <span class="mono">file://</span> URLs.</p>
+    </div></div>
+  </div>
+  <aside id="detail"></aside>
+</main>
+
+<div class="legend">
+  <span><i style="background:var(--pg-band);opacity:.45"></i>PG envelope (low→high reservoir)</span>
+  <span><i style="background:var(--pg-target);height:2px;border-radius:0"></i>ramp target (when known)</span>
+  <span><i style="background:var(--lb);opacity:.3"></i>LB</span>
+  <span><i style="background:var(--m9);opacity:.3"></i>M9</span>
+  <span><i style="background:var(--ramp)"></i>ramp step (target_ramp) — darker is larger</span>
+  <span>right of each label: live burn rate from the eVOLVER, red when stalled</span>
+  <span><i style="background:var(--altsel-high)"></i>alternating_selection HIGH (challenge)</span>
+  <span><i style="background:var(--altsel-low)"></i>LOW (purge &amp; recover)</span>
+  <span><i style="background:var(--ink-3);border-radius:50%"></i>event marker — click for detail</span>
+  <span><i style="background:var(--ink-3);height:2px;border-radius:0"></i>split / merge edge</span>
+</div>
+
+<script>
+"use strict";
+const SRC = "evolution_log.json", POLL_MS = 5000;
+const NS = "http://www.w3.org/2000/svg";
+const H = 3600e3;
+
+/* ------------------------------------------------------------------ state */
+let LOG = null, MODEL = null, RAW = "";
+let view = "timeline", selected = null, selEvent = null, pxPerHour = 34, lastOK = 0;
+const filters = {strain:new Set(), media:new Set(), mode:new Set()};
+/* "live" hides only lineages that are entirely finished; terminated ancestors
+   of a running line stay, so the graph never loses an edge. */
+let scope = "live", query = "", compact = false;
+
+/* Theme: "system" follows prefers-color-scheme, the others stamp data-theme
+   so the CSS attribute rules win in both directions. */
+let theme = "system";
+try { theme = localStorage.getItem("or05-theme") || "system"; } catch (e) {}
+function applyTheme(){
+  const r = document.documentElement;
+  if (theme === "system") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", theme);
+  const b = el("theme");
+  if (b) b.textContent = "Theme: " + (theme === "system" ? "auto" : theme);
+  try { localStorage.setItem("or05-theme", theme); } catch (e) {}
+}
+
+/* ------------------------------------------------------------- live feed */
+/* Per-vial pump state polled from each eVOLVER's dashboard. Held in memory
+   only: it is current state, not a record, and nothing here is ever written
+   back to the log. Joined to lines on (unit, vial). */
+let CFG = null;
+const LIVE = {};        // "unit/vial" -> vial record
+const UNITS = {};       // unit -> {ok, error, evolver, elapsed_h, generated_at, at}
+const STALE_H = 2;
+
+async function loadConfig(){
+  try{
+    const r = await fetch("viewer.config.json?t=" + Date.now(), {cache:"no-store"});
+    CFG = r.ok ? await r.json() : null;
+  }catch(e){ CFG = null; }
+}
+
+async function pollUnit(unit, spec){
+  const base = String(spec.url || "").replace(/\/+$/, "");
+  const win = (CFG && CFG.burn_rate_window_h) || 6;
+  try{
+    const r = await fetch(`${base}/api/v1/vials?window_h=${win}`, {cache:"no-store"});
+    const d = await r.json();
+    if (!r.ok || d.ok === false){
+      UNITS[unit] = {ok:false, error:(d && d.error) || `HTTP ${r.status}`, at:Date.now()};
+      return;
+    }
+    /* Trust the endpoint over the config file: two dashboards on one host take
+       ports by start order, so a swapped url would otherwise silently paint
+       one unit's pump data onto the other's lanes. */
+    if (d.evolver && d.evolver !== unit){
+      UNITS[unit] = {ok:false, at:Date.now(),
+        error:`this url serves ${d.evolver}, not ${unit} — check viewer.config.json`};
+      return;
+    }
+    for (const v of (d.vials||[])) LIVE[`${unit}/${v.vial}`] = v;
+    /* `experiment` is read by pollDispenses' restart guard below. It was
+       never stored, so `runNow` was permanently undefined and that half of
+       the guard could never fire -- leaving the viewer wedged on the previous
+       run's events after any restart, which is the exact outcome the guard's
+       own comment describes. */
+    UNITS[unit] = {ok:true, evolver:d.evolver, elapsed_h:d.elapsed_h,
+                   experiment:d.experiment,
+                   generated_at:d.generated_at, n:(d.vials||[]).length,
+                   calibrated:d.pump_calibration, at:Date.now()};
+  }catch(e){
+    /* A cross-origin failure and an unreachable host look identical from here,
+       so say both rather than guessing. */
+    UNITS[unit] = {ok:false, at:Date.now(),
+      error:"unreachable, or the dashboard is not sending CORS headers"};
+  }
+}
+
+async function pollDispenses(unit, spec, vials){
+  const base = String(spec.url || "").replace(/\/+$/, "");
+  for (const v of vials){
+    const key = `${unit}/${v.vial}`;
+    const cur = DISP[key] || {events:[], upto:0, volume:null, t0ms:null, run:null};
+    try{
+      const r = await fetch(`${base}/api/v1/vials/${v.vial}/dispenses?since_h=${cur.upto}`,
+                            {cache:"no-store"});
+      if (!r.ok) continue;
+      const d = await r.json();
+
+      /* Starting a fresh experiment on the eVOLVER resets the controller clock
+         and the pump log. Two things then break silently unless caught here.
+         The high-water mark is ahead of the new clock, so since_h never matches
+         and no new event is ever fetched again. And t0ms is re-anchored to the
+         new epoch, which would drag every cached event from the previous run
+         forward into the future and corrupt the generation counts. Detect it by
+         the run name changing or the clock going backwards, and start over. */
+      const runNow = UNITS[unit] && UNITS[unit].experiment;
+      const restarted = (cur.run && runNow && cur.run !== runNow) ||
+                        (d.elapsed_h !== undefined && cur.upto > d.elapsed_h + 0.01);
+      if (restarted){
+        cur.events = []; cur.upto = 0; cur.t0ms = null;
+        cur.priorRun = (cur.priorRun || 0) + 1;
+      }
+      cur.run = runNow || cur.run;
+      /* controller time -> wall clock, with no configured epoch:
+         wall(t) = generated_at - (elapsed_h - t) hours */
+      if (d.generated_at && d.elapsed_h !== undefined)
+        cur.t0ms = T(d.generated_at) - d.elapsed_h*H;
+      cur.volume = d.vial_volume_mL || cur.volume;
+      for (const row of (d.dispenses||[])) cur.events.push(row);
+      if (d.dispenses && d.dispenses.length)
+        cur.upto = d.dispenses[d.dispenses.length-1][0];
+      else if (d.elapsed_h !== undefined) cur.upto = Math.max(cur.upto, d.elapsed_h);
+      DISP[key] = cur;
+    }catch(e){ /* leave what we have; the summary poll reports the outage */ }
+  }
+}
+
+const ALTSEL = {};      // "unit/vial" -> {state, spans:[[t0,t1,state]], t0ms, current_drug}
+
+/* alternating_selection's HIGH/LOW state, which exists ONLY in the rig's own
+   state_log/ files -- evolution_log.json records decisions, not controller
+   state, so there is nowhere else this could come from. Spans are in
+   controller hours; t0ms anchors them to the wall clock with the same
+   identity pollDispenses uses: wall(t) = generated_at - (elapsed_h - t). */
+async function pollAltsel(unit, spec){
+  const base = String(spec.url || "").replace(/\/+$/, "");
+  try{
+    const r = await fetch(`${base}/api/v1/altsel`, {cache:"no-store"});
+    if (!r.ok) return;
+    const d = await r.json();
+    /* Trust the endpoint over the config file, exactly as pollUnit does: a
+       swapped url would otherwise paint one rig's states onto the other's
+       lanes, and a state ribbon is far harder to disbelieve than a number. */
+    if (d.evolver && d.evolver !== unit) return;
+    if (d.mode !== "alternating_selection"){
+      for (const k of Object.keys(ALTSEL)) if (k.startsWith(unit + "/")) delete ALTSEL[k];
+      return;
+    }
+    if (!d.generated_at || d.elapsed_h === undefined) return;
+    const t0ms = T(d.generated_at) - d.elapsed_h*H;
+    for (const v of (d.vials||[]))
+      ALTSEL[`${unit}/${v.vial}`] = {state:v.state, spans:v.spans||[], t0ms,
+                                     current_drug:v.current_drug, counter:v.counter,
+                                     last_kind:v.last_kind};
+  }catch(e){ /* the summary poll already reports an outage; stay quiet here */ }
+}
+
+async function pollLive(){
+  if (!CFG) await loadConfig();
+  const units = (CFG && CFG.units) || {};
+  const enabled = Object.entries(units).filter(([, s]) => s.enabled !== false);
+  await Promise.all(enabled.map(([u, s]) => pollUnit(u, s)));
+  await Promise.all(enabled.map(([u, s]) => {
+    const mine = Object.values(LIVE).filter(v => LIVE[`${u}/${v.vial}`] === v);
+    return UNITS[u] && UNITS[u].ok ? pollDispenses(u, s, mine) : null;
+  }));
+  await Promise.all(enabled.map(([u, s]) =>
+    UNITS[u] && UNITS[u].ok ? pollAltsel(u, s) : null));
+  if (MODEL) render();
+}
+
+/* Live record for a line, or null. Only active lines have live state: a
+   terminated line's vial may well be running someone else's culture now.
+   An active line can ALSO be off-evolver right now (hardware_swap's
+   vacate -- unit/vial both null, a real "not on evolver" state, not a
+   missing value) -- checked explicitly rather than left to rely on
+   "${null}/${null}" never happening to collide with a real LIVE key,
+   which is true today only because real vial numbers are never the
+   literal string "null". */
+/* Controller-hour spans -> wall-clock bands, clipped to one line's own life.
+   Two things this must get right. The conversion is the same identity
+   pollDispenses uses, wall(t) = generated_at - (elapsed_h - t), carried in
+   t0ms. And the clip is not cosmetic: a vial's state log describes the VIAL,
+   which may have held a different culture before this line started and after
+   it ended -- painting those hours onto this lane would attribute another
+   culture's protocol half to it. */
+function altselBands(asel, start, end){
+  if (!asel || !asel.spans || !Number.isFinite(asel.t0ms)) return [];
+  const out = [];
+  for (const sp of asel.spans){
+    const t0 = Math.max(asel.t0ms + sp[0]*H, start);
+    const t1 = Math.min(asel.t0ms + sp[1]*H, end);
+    if (t1 > t0) out.push({t0, t1, state: sp[2]});
+  }
+  return out;
+}
+
+function altselFor(n){
+  if (!n || n.L.status !== "active" || n.L.unit == null || n.L.vial == null) return null;
+  return ALTSEL[`${n.L.unit}/${n.L.vial}`] || null;
+}
+
+function liveFor(n){
+  if (!n || n.L.status !== "active" || n.L.unit == null || n.L.vial == null) return null;
+  return LIVE[`${n.L.unit}/${n.L.vial}`] || null;
+}
+
+/* ------------------------------------------------------- generations */
+/* A dispense of v mL into a vial of V mL dilutes the culture by V/(V+v).
+   Holding a turbidostat at its setpoint means the culture must regrow that
+   factor before the next dilution, so each dispense is log2((V+v)/V)
+   doublings. Summing over dispenses gives generations of turnover.
+
+   Two things this is not. It is a FLOOR: a culture growing below setpoint
+   divides without triggering a dilution, and those divisions are invisible
+   here. And it assumes the culture actually regrew — during washout it did
+   not, so those cycles overcount. Both are stated rather than corrected for.
+
+   Windows the log marks as anomalous are excluded, because during flooding or
+   a dry sipper the pump fired but the vessel did not receive what the log
+   says it did. */
+const DISP = {};        // "unit/vial" -> {events:[[t,mL,pump]], upto:h, volume:mL}
+
+function anomalyWindows(n){
+  /* [start_ms, end_ms] pairs during which this line's dilutions are not
+     trustworthy, taken from anomaly events already in the log. */
+  const out = [];
+  for (const e of n.evs){
+    if (e.event_type !== "anomaly") continue;
+    const t0 = T(e.timestamp);
+    const p = e.params || {};
+    let t1 = null;
+    if (p.resolved_at) t1 = T(p.resolved_at);
+    else if (p.duration && p.duration.unit === "h") t1 = t0 + p.duration.value*H;
+    else if (n.lin.terminated_at) t1 = T(n.lin.terminated_at);
+    else t1 = n.end;
+    if (t1 !== null && t1 > t0) out.push([t0, t1]);
+  }
+  return out;
+}
+
+function generationsFor(n){
+  /* Generations accumulated under a PREVIOUS controller run live in the log,
+     not in the feed: a fresh experiment resets the pump log, so the API can
+     only ever count the current run. */
+  const carried = (n.L.generations_carried_forward || {}).value || 0;
+  // off-evolver right now (hardware_swap's vacate) -- no current-run pump
+  // log to look up at all; same explicit check as liveFor's, not left to
+  // "${null}/${null}" accidentally never matching a real DISP key.
+  const d = (n.L.unit == null || n.L.vial == null) ? undefined : DISP[`${n.L.unit}/${n.L.vial}`];
+  if (!d || !d.events.length || !d.volume || !d.t0ms)
+    return carried ? {gens:carried, counted:0, skipped:0, excluded:0, carried} : null;
+  const bad = anomalyWindows(n);
+  /* clip to this LINE's own occupancy: the vial's pump log spans the whole
+     run, but a restart or a merge means the line only owns part of it */
+  const lo = n.start, hi = n.end;
+  let gens = 0, counted = 0, skipped = 0;
+  for (const [th, mL] of d.events){
+    if (mL === null) continue;
+    const t = d.t0ms + th*H;
+    if (t < lo || t > hi) continue;
+    if (bad.some(([a,b]) => t >= a && t <= b)) { skipped++; continue; }
+    gens += Math.log2((d.volume + mL) / d.volume);
+    counted++;
+  }
+  return {gens: gens + carried, counted, skipped, excluded: bad.length, carried};
+}
+
+/* Merged lines take the larger parent count, per the operator's choice, and
+   add what they have accrued since the merge. */
+function generationsTotal(n, seen){
+  seen = seen || new Set();
+  if (seen.has(n.id)) return null;
+  seen.add(n.id);
+  const own = generationsFor(n);
+  let inherited = 0, from = null;
+  for (const p of n.parents){
+    const pn = MODEL.nodes[p];
+    if (!pn) continue;
+    const pt = generationsTotal(pn, seen);
+    if (pt && pt.total > inherited){ inherited = pt.total; from = p; }
+  }
+  if (!own && !inherited) return null;
+  return {own: own ? own.gens : 0, inherited, from,
+          total: (own ? own.gens : 0) + inherited,
+          counted: own ? own.counted : 0, skipped: own ? own.skipped : 0,
+          carriedTotal: own ? (own.carried || 0) : 0};
+}
+function fmtBurn(lv){
+  const b = lv && lv.burn_rate_mL_per_h;
+  if (!b || b.total === null || b.total === undefined) return null;
+  return `${b.total.toFixed(0)} mL/h`;
+}
+
+const el = id => document.getElementById(id);
+const mk = (n, a) => { const e = document.createElementNS(NS, n);
+  for (const k in (a||{})) e.setAttribute(k, a[k]); return e; };
+
+/* ------------------------------------------------------- value formatting */
+function gL(c){ return (c && typeof c === "object" && "value_g_per_L" in c) ? c.value_g_per_L : null; }
+function fmt(v){
+  if (v === null || v === undefined) return "—";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (typeof v === "object"){
+    if ("value_g_per_L" in v) return `${v.value_g_per_L} g/L (${v.value_mM} mM)`;
+    if ("value" in v) return v.value === null ? "—" : `${v.value}${v.unit ? " " + v.unit : ""}`;
+    return Object.entries(v).map(([k,x]) => `${k}: ${fmt(x)}`).join(", ");
+  }
+  if (typeof v === "boolean") return v ? "yes" : "no";
+  return String(v);
+}
+const T = s => s ? new Date(s).getTime() : null;
+function fmtT(ts){
+  const d = new Date(ts);
+  return d.toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+}
+function fmtEl(h){ return h === null ? "" : (h < 48 ? h.toFixed(1)+" h" : (h/24).toFixed(1)+" d"); }
+
+/* ------------------------------------------------------------ derivation */
+/* Rebuilds the whole render model from the JSON. The JSON is the only source
+   of truth: nothing here is cached across reloads. */
+function derive(log){
+  const lines = log.lines || {};
+  const ids = Object.keys(lines);
+  const now = Date.now();
+  let tMin = Infinity, tMax = -Infinity, pgMax = 0, rampMax = 0;
+
+  const nodes = {};
+  for (const id of ids){
+    const L = lines[id];
+    const lin = L.lineage || {parents:[],children:[],roots:[id],depth:0};
+    const evs = (L.events||[]).slice().sort((a,b) => T(a.timestamp) - T(b.timestamp));
+    const start = T(lin.created_at || L.t0 || (evs[0]||{}).timestamp) || now;
+    const endRaw = lin.terminated_at ? T(lin.terminated_at) : null;
+    const lastEv = evs.length ? T(evs[evs.length-1].timestamp) : start;
+    const end = endRaw !== null ? endRaw : Math.max(now, lastEv);
+
+    /* PG envelope: piecewise-constant segments. The log usually knows only the
+       low and high reservoir concentrations, so we render a band, plus the
+       ramp target as a step line wherever it is actually recorded. */
+    const rg = L.pg_regime || {};
+    let low = gL(rg.low) ?? 0, high = gL(rg.high) ?? 0, target = gL(rg.target);
+    const pg = [], media = [];
+    let mediaCur = L.initial_media || "—", mediaFrom = start, pgFrom = start;
+    for (const e of evs){
+      const t = T(e.timestamp), p = e.params || {};
+      if (p.pg_low !== undefined || p.pg_high !== undefined || p.pg_target !== undefined){
+        const nl = p.pg_low !== undefined ? (gL(p.pg_low) ?? low) : low;
+        const nh = p.pg_high !== undefined ? (gL(p.pg_high) ?? high) : high;
+        const nt = p.pg_target !== undefined ? gL(p.pg_target) : target;
+        if (nl !== low || nh !== high || nt !== target){
+          if (t > pgFrom) pg.push({t0:pgFrom, t1:t, low, high, target});
+          low = nl; high = nh; target = nt; pgFrom = t;
+        }
+      }
+      if (e.event_type === "media_switch" && p.media_to && p.media_to !== mediaCur){
+        if (t > mediaFrom) media.push({t0:mediaFrom, t1:t, media:mediaCur});
+        mediaCur = p.media_to; mediaFrom = t;
+      }
+    }
+    pg.push({t0:pgFrom, t1:end, low, high, target});
+    media.push({t0:mediaFrom, t1:end, media:mediaCur});
+
+    /* Ramp step size is a per-vial controller setting with its own history:
+       lines begin, end and change at different times, so it is read from the
+       line rather than from the run-wide default. */
+    const ramp = ((L.ramp||{}).history||[]).map(h => ({
+      t0: Math.max(T(h.from) ?? start, start),
+      t1: h.to ? Math.min(T(h.to), end) : end,
+      step: gL(h.step_size),
+      source: h.source
+    })).filter(s => s.t1 > s.t0);
+    for (const s of ramp) rampMax = Math.max(rampMax, s.step ?? 0);
+
+    for (const s of pg) pgMax = Math.max(pgMax, s.high, s.low, s.target ?? 0);
+    tMin = Math.min(tMin, start); tMax = Math.max(tMax, end);
+
+    nodes[id] = {id, L, lin, evs, start, end, pg, media, ramp,
+                 parents:(lin.parents||[]).filter(p => p in lines),
+                 children:(lin.children||[]).filter(c => c in lines),
+                 root:(lin.roots||[id])[0], depth:lin.depth||0,
+                 terminated: !!lin.terminated_at || L.status !== "active"};
+  }
+
+  /* An edge leaves its parent at the moment the transfer happened, which is the
+     CHILD's creation time -- not at the parent's end. For a split or a merge the
+     two coincide, but for a branch the parent carries on for days afterwards,
+     and anchoring the edge to its end drew the fork as though it had happened
+     now. Clamped into the parent's own span so an edge can never start before
+     the parent existed or after it ended. */
+  const edges = [];
+  for (const id of ids) for (const p of nodes[id].parents){
+    const par = nodes[p], kid = nodes[id];
+    edges.push({from:p, to:id, merge: kid.parents.length > 1,
+                at: par ? Math.min(Math.max(kid.start, par.start), par.end) : kid.start});
+  }
+
+  /* A lineage is live if it still has a living tip. That includes terminated
+     ancestors of active lines: dropping them would silently delete half the
+     edges and make a merge child look like it had one parent. Only lines whose
+     whole descendant subtree is dead count as finished. */
+  for (const id of ids) nodes[id].inLiveLineage = false;
+  const walkUp = id => {
+    if (!nodes[id] || nodes[id].inLiveLineage) return;
+    nodes[id].inLiveLineage = true;
+    for (const p of nodes[id].parents) walkUp(p);
+  };
+  for (const id of ids) if (nodes[id].L.status === "active") walkUp(id);
+
+  if (!isFinite(tMin)) { tMin = now - 6*H; tMax = now; }
+  if (tMax - tMin < 6*H) tMax = tMin + 6*H;
+  if (!(pgMax > 0)) pgMax = 1;
+  if (!(rampMax > 0)) rampMax = 1;
+
+  /* Row order: founders sorted, each immediately followed by its descendants
+     (depth-first) so a fork reads top-to-bottom. Merges attach under the first
+     parent encountered and are not repeated. */
+  const order = [], seen = new Set();
+  const founders = ids.filter(i => !nodes[i].parents.length).sort(cmpId);
+  const walk = id => {
+    if (seen.has(id)) return;
+    if (nodes[id].parents.some(p => !seen.has(p))) return;  // wait for all parents
+    seen.add(id); order.push(id);
+    nodes[id].children.slice().sort(cmpId).forEach(walk);
+  };
+  founders.forEach(walk);
+  ids.filter(i => !seen.has(i)).sort(cmpId).forEach(i => { seen.add(i); order.push(i); });
+
+  /* Facility-level events (reservoir swaps, power loss) belong to no single
+     line and are drawn across the whole chart. */
+  const facility = (log.experiment_events || []).slice()
+    .sort((a,b) => T(a.timestamp) - T(b.timestamp));
+  for (const f of facility){
+    const t = T(f.timestamp);
+    if (t !== null){ tMin = Math.min(tMin, t); tMax = Math.max(tMax, t); }
+  }
+
+  /* Count distinct event_ids: a split or merge may legitimately appear in more
+     than one line's events array, and must not be counted twice. */
+  const seenEv = new Set();
+  for (const id of ids) for (const e of nodes[id].evs) seenEv.add(e.event_id || Math.random());
+  for (const f of facility) seenEv.add(f.event_id || Math.random());
+
+  return {nodes, edges, order, tMin, tMax, pgMax, rampMax, now, facility,
+          summary: log.lineage_summary || {}, nEvents: seenEv.size};
+}
+function cmpId(a,b){ return a.localeCompare(b, undefined, {numeric:true}); }
+
+/* Facility events cluster hard. A level round writes one event per reservoir at
+   a single instant, so 121 facility events sit at 29 distinct timestamps and up
+   to ten share one. Drawing a marker and a label per EVENT stacked ten lines and
+   ten labels on the same pixel, which is what garbled the axis. Group by
+   timestamp instead: one marker, one label, and the tooltip carries the rest. */
+function facilityGroups(facility, T){
+  const by = new Map();
+  for (const f of facility || []){
+    const k = f.timestamp;
+    if (!by.has(k)) by.set(k, {timestamp: k, t: T(k), events: []});
+    by.get(k).events.push(f);
+  }
+  const out = [...by.values()].sort((a,b) => a.t - b.t);
+  for (const g of out){
+    const types = [...new Set(g.events.map(e => e.event_type))];
+    g.label = g.events.length === 1 ? types[0]
+            : types.length === 1  ? `${types[0]} ×${g.events.length}`
+            : `${g.events.length} events`;
+    g.title = `${g.timestamp}\n` + types.map(ty => {
+      const n = g.events.filter(e => e.event_type === ty).length;
+      return n > 1 ? `${ty} ×${n}` : ty;
+    }).join(", ") + (g.events.length > 1 ? "\n(click to step through them)" : "");
+  }
+  return out;
+}
+
+/* Which of a left-to-right sequence of labels there is room to draw. Anything
+   that would collide with the last one drawn is dropped, not shrunk or clipped:
+   a half-legible label on a provenance record is worse than no label, since the
+   marker line and its tooltip still carry the full content. CHAR_W over-
+   estimates 10.5px type on purpose, for the same reason. */
+const CHAR_W = 6.0, LABEL_GAP = 8;
+function placeLabels(groups, xOf, reserved){
+  let lastRight = -Infinity;
+  for (const g of groups){
+    const x = xOf(g.t), w = g.label.length * CHAR_W;
+    g.x = x;
+    g.show = x >= lastRight + LABEL_GAP &&
+             !(reserved || []).some(r => x < r.right + LABEL_GAP && x + w > r.left - LABEL_GAP);
+    if (g.show) lastRight = x + w;
+  }
+  return groups;
+}
+
+/* ---------------------------------------------------------------- filters */
+function visibleIds(){
+  if (!MODEL) return [];
+  return MODEL.order.filter(id => {
+    const n = MODEL.nodes[id], L = n.L;
+    if (scope === "live" && !n.inLiveLineage) return false;
+    if (filters.strain.size && !filters.strain.has(L.strain)) return false;
+    if (filters.media.size && !filters.media.has(L.current_media || L.initial_media)) return false;
+    if (filters.mode.size && !filters.mode.has(L.mode)) return false;
+    if (query && !(`${id} ${L.strain} ${L.unit||""} ${L.group||""}`.toLowerCase().includes(query)) ) return false;
+    return true;
+  });
+}
+function buildFilters(){
+  const L = Object.values(MODEL.nodes).map(n => n.L);
+  const uniq = f => [...new Set(L.map(f))].filter(Boolean).sort();
+  const spec = [["strain", uniq(x=>x.strain)], ["media", uniq(x=>x.current_media||x.initial_media)],
+                ["mode", uniq(x=>x.mode)]];
+  for (const [key, vals] of spec){
+    const box = el("f-"+key);
+    [...box.querySelectorAll("button")].forEach(b => b.remove());
+    for (const v of vals){
+      const b = document.createElement("button");
+      b.className = "chip"; b.textContent = v;
+      b.setAttribute("aria-pressed", filters[key].has(v));
+      b.onclick = () => { filters[key].has(v) ? filters[key].delete(v) : filters[key].add(v);
+                          b.setAttribute("aria-pressed", filters[key].has(v)); render(); };
+      box.appendChild(b);
+    }
+  }
+}
+
+/* --------------------------------------------------------------- timeline */
+let LANE = 52, PADT = 7, PADB = 9;
+const LEFT = 208;
+function setDensity(){
+  LANE = compact ? 30 : 52;
+  PADT = compact ? 4 : 7;
+  PADB = compact ? 11 : 9;   // ramp strip needs its 12px at the lane floor either way
+}
+const xOf = t => ((t - MODEL.tMin) / H) * pxPerHour + 14;
+
+function renderTimeline(){
+  const ids = visibleIds();
+  const plot = el("plot"), labels = el("labelsvg"), axis = el("axis");
+  plot.replaceChildren(); labels.replaceChildren(); axis.replaceChildren();
+
+  const W = Math.max(xOf(MODEL.tMax) + 40, el("plotwrap").clientWidth);
+  const Hgt = Math.max(ids.length * LANE + 12, 40);
+  plot.setAttribute("width", W); plot.setAttribute("height", Hgt);
+  plot.setAttribute("viewBox", `0 0 ${W} ${Hgt}`);
+  labels.setAttribute("width", LEFT); labels.setAttribute("height", Hgt);
+  /* Three rows. Facility labels used to be drawn at y:11 on a 30px axis, which
+     put them on top of the date row at y:13 even when only one event sat there. */
+  const ROW_FACI = 12, ROW_DATE = 28, ROW_ELAPSED = 40;
+  axis.setAttribute("width", W); axis.setAttribute("height", 44);
+
+  /* --- time axis --- */
+  const xn = xOf(MODEL.now);
+  const nowSpan = {left: xn - 13, right: xn + 13};
+
+  const spanH = (MODEL.tMax - MODEL.tMin) / H;
+  const steps = [1,2,3,6,12,24,48,72,168,336];
+  const step = steps.find(s => spanH / s <= 12) || 720;
+  const t0 = Math.ceil(MODEL.tMin / (step*H)) * step*H;
+  for (let t = t0; t <= MODEL.tMax; t += step*H){
+    const x = xOf(t);
+    plot.appendChild(mk("line", {x1:x, x2:x, y1:0, y2:Hgt, class:"gridline"}));
+    // "now" sits on the same row and wins; the gridline above still marks the tick
+    if (x > nowSpan.left - LABEL_GAP && x < nowSpan.right + LABEL_GAP) continue;
+    const lab = mk("text", {x, y:ROW_DATE, class:"tick", "text-anchor":"middle"});
+    lab.textContent = fmtT(t);
+    axis.appendChild(lab);
+    const el2 = mk("text", {x, y:ROW_ELAPSED, class:"tick", "text-anchor":"middle"});
+    el2.textContent = "+" + fmtEl((t - MODEL.tMin)/H);
+    axis.appendChild(el2);
+  }
+  plot.appendChild(mk("line", {x1:xn, x2:xn, y1:0, y2:Hgt, class:"nowline"}));
+  const nl = mk("text", {x:xn, y:ROW_DATE, class:"tick", "text-anchor":"middle", fill:"var(--accent)"});
+  nl.textContent = "now"; axis.appendChild(nl);
+
+  /* facility events: one marker per INSTANT, not per event. A level round puts
+     eight at the same timestamp and they drew eight identical lines and labels. */
+  for (const g of placeLabels(facilityGroups(MODEL.facility, T), xOf)){
+    const ln = mk("line", {x1:g.x, x2:g.x, y1:0, y2:Hgt, class:"faciline"});
+    const ti = mk("title"); ti.textContent = g.title; ln.appendChild(ti);
+    ln.style.cursor = "pointer";
+    ln.onclick = e => {
+      e.stopPropagation();
+      // step through a cluster rather than always selecting its first event,
+      // or the other seven readings in a round would be unreachable
+      const i = g.events.indexOf(selEvent);
+      selEvent = g.events[(i + 1) % g.events.length];
+      renderDetail();
+    };
+    plot.appendChild(ln);
+    if (!g.show) continue;
+    const lab = mk("text", {x:g.x+4, y:ROW_FACI, class:"tick", fill:"var(--m9)"});
+    lab.textContent = g.label;
+    const lt = mk("title"); lt.textContent = g.title; lab.appendChild(lt);
+    axis.appendChild(lab);
+  }
+
+  const rowY = {}; ids.forEach((id,i) => rowY[id] = i*LANE + 6);
+
+  /* --- lineage edges first, so lanes draw over them --- */
+  for (const e of MODEL.edges){
+    if (!(e.from in rowY) || !(e.to in rowY)) continue;
+    const b = MODEL.nodes[e.to];
+    const x1 = xOf(e.at),     y1 = rowY[e.from] + LANE/2 - 3;
+    const x2 = xOf(b.start),  y2 = rowY[e.to]   + LANE/2 - 3;
+    /* Nearly always a vertical drop at the transfer time, so bend on Y rather
+       than on X: a horizontal S-curve here would reintroduce the impression
+       that the fork happened somewhere between the two moments. */
+    const my = (y1 + y2)/2;
+    plot.appendChild(mk("path", {d:`M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`,
+                                 class:"edge" + (e.merge ? " merge" : "")}));
+    /* mark the departure point on the parent lane, so a branch reads as a
+       moment on the parent's own timeline rather than a line appearing from it */
+    const dot = mk("circle", {cx:x1, cy:y1, r:2.6, fill:"var(--ink-3)"});
+    const dti = mk("title");
+    dti.textContent = `${e.to} branched from ${e.from}\n${fmtT(e.at)}`;
+    dot.appendChild(dti);
+    plot.appendChild(dot);
+  }
+
+  /* --- lanes --- */
+  for (const id of ids){
+    const n = MODEL.nodes[id], y = rowY[id], h = LANE - PADT - PADB;
+    const g = mk("g", {class:"lane-row" + (selected === id ? " sel" : "")});
+    g.dataset.id = id;
+    g.appendChild(mk("rect", {x:0, y, width:W, height:LANE-4, class:"lane-bg",
+                              fill:"transparent", rx:5}));
+
+    /* media background bands */
+    for (const m of n.media){
+      const x = xOf(m.t0), w = Math.max(xOf(m.t1) - x, 1);
+      g.appendChild(mk("rect", {x, y:y+PADT-3, width:w, height:h+6,
+        fill: m.media === "M9" ? "var(--m9)" : "var(--lb)", "fill-opacity":.13, rx:3}));
+    }
+
+    const yPG = v => y + PADT + h - (v / MODEL.pgMax) * h;
+    /* baseline */
+    g.appendChild(mk("line", {x1:xOf(n.start), x2:xOf(n.end), y1:yPG(0), y2:yPG(0),
+                              stroke:"var(--line-2)", "stroke-width":1}));
+    /* PG envelope: band from low to high */
+    for (const s of n.pg){
+      const x = xOf(s.t0), w = Math.max(xOf(s.t1) - x, 1);
+      const yt = yPG(s.high), yb = yPG(s.low);
+      g.appendChild(mk("rect", {x, y:yt, width:w, height:Math.max(yb - yt, 1.5),
+        fill:"var(--pg-band)", "fill-opacity":.36}));
+      g.appendChild(mk("line", {x1:x, x2:x+w, y1:yt, y2:yt,
+        stroke:"var(--pg-band)", "stroke-width":1.4, "stroke-opacity":.85}));
+      if (s.target !== null && s.target !== undefined)
+        g.appendChild(mk("line", {x1:x, x2:x+w, y1:yPG(s.target), y2:yPG(s.target),
+          stroke:"var(--pg-target)", "stroke-width":2}));
+    }
+    /* alternating_selection state ribbon, on the lane floor beneath the ramp
+       strip. HIGH is the challenge half, LOW the purge-and-recover half; the
+       pair alternates forever, so without this a lane shows a culture being
+       diluted with no indication of which protocol half it is in. Live rig
+       state, so it only ever covers the recent end of an active line's lane;
+       clipped to the line's own [start, end] because a vial's state log says
+       nothing about the culture that occupied it before. */
+    const asel = altselFor(n);
+    if (asel){
+      const ry = y + LANE - 6;
+      for (const sp of altselBands(asel, n.start, n.end)){
+        const x = xOf(sp.t0), w = Math.max(xOf(sp.t1) - x, 1);
+        g.appendChild(mk("rect", {x, y:ry, width:w, height:4, rx:1.5,
+          fill: sp.state === "HIGH" ? "var(--altsel-high)" : "var(--altsel-low)",
+          "fill-opacity":.85}));
+        const hit = mk("rect", {x, y:ry-3, width:w, height:10, fill:"transparent"});
+        const ti = mk("title");
+        ti.textContent = `alternating_selection: ${sp.state}`
+          + (asel.current_drug != null ? `\nCurrent_Drug ${asel.current_drug} g/L` : "")
+          + (asel.counter != null ? `\nstreak ${asel.counter}` : "")
+          + (asel.last_kind ? ` (${asel.last_kind})` : "");
+        hit.appendChild(ti);
+        g.appendChild(hit);
+      }
+    }
+
+    /* ramp strip along the lane floor: per-vial target_ramp over time.
+       Opacity scales with step size so a change reads without needing the
+       label, which only fits on wide enough segments. */
+    for (const s of n.ramp){
+      const x = xOf(s.t0), w = Math.max(xOf(s.t1) - x, 1), ry = y + LANE - 12;
+      const frac = (s.step ?? 0) / MODEL.rampMax;
+      g.appendChild(mk("rect", {x, y:ry, width:w, height:5, rx:1.5,
+        fill:"var(--ramp)", "fill-opacity":(0.30 + 0.60*frac).toFixed(2)}));
+      const hit = mk("rect", {x, y:ry-2, width:w, height:9, fill:"transparent"});
+      const ti = mk("title");
+      ti.textContent = `target_ramp ${s.step} g/L` + (s.source ? `\n${s.source}` : "");
+      hit.appendChild(ti);
+      g.appendChild(hit);
+      if (w > 40 && s.step != null){
+        const t = mk("text", {x:x+4, y:ry+4, class:"ramplab"});
+        t.textContent = s.step + " g/L";
+        g.appendChild(t);
+      }
+    }
+
+    /* event markers */
+    for (const e of n.evs){
+      const x = xOf(T(e.timestamp)), my = y + PADT - 3;
+      const shape = markerFor(e.event_type, x, my);
+      shape.classList.add("marker");
+      shape.dataset.event = e.event_id;
+      const ti = mk("title");
+      ti.textContent = `${e.event_type} · ${fmtT(T(e.timestamp))}${e.notes ? "\n"+e.notes : ""}`;
+      shape.appendChild(ti);
+      shape.onclick = ce => { ce.stopPropagation(); selected = id; selEvent = e; render(); };
+      g.appendChild(shape);
+    }
+    g.onclick = () => select(id);
+    plot.appendChild(g);
+
+    /* label column */
+    const lg = mk("g", {class:"lane-row" + (selected === id ? " sel" : "")});
+    lg.appendChild(mk("rect", {x:0, y, width:LEFT, height:LANE-4, class:"lane-bg", fill:"transparent"}));
+    const L = n.L;
+    const t1 = mk("text", {x:12, y: compact ? y+13 : y+19, class:"lid"});
+    t1.textContent = id + (n.terminated ? " ×" : "");
+    lg.appendChild(t1);
+
+    /* live pump state, right-aligned so it reads as a column of its own.
+       A stalled vial is the thing worth noticing, so it gets the warning
+       colour and displaces the burn rate rather than sitting beside it. */
+    const lv = liveFor(n);
+  const gt = generationsTotal(n);
+    const stalled = lv && lv.stale_h !== null && lv.stale_h > STALE_H;
+    if (lv){
+      const txt = stalled ? `stalled ${lv.stale_h.toFixed(1)} h` : (fmtBurn(lv) || "no rate");
+      const t3 = mk("text", {x:LEFT-12, y: compact ? y+13 : y+19, class:"llive",
+                             "text-anchor":"end", fill: stalled ? "var(--err)" : "var(--ink-2)"});
+      t3.textContent = txt;
+      const ti = mk("title");
+      ti.textContent = [
+        `vial ${lv.vial}`,
+        lv.burn_rate_mL_per_h && lv.burn_rate_mL_per_h.total !== null
+          ? `low ${lv.burn_rate_mL_per_h.low} + high ${lv.burn_rate_mL_per_h.high} mL/h` : "no pump calibration",
+        lv.drug_concentration_g_per_L !== null ? `controller says ${lv.drug_concentration_g_per_L} g/L` : "",
+        lv.stale_h !== null ? `last dispense ${lv.stale_h} h ago` : "",
+      ].filter(Boolean).join("\n");
+      t3.appendChild(ti);
+      lg.appendChild(t3);
+    }
+
+    if (!compact){
+      const t2 = mk("text", {x:12, y:y+34, class:"lmeta"});
+      t2.textContent = `${L.strain} · ${L.current_media||L.initial_media} · ${L.mode}` +
+                       (n.depth ? ` · gen ${n.depth}` : "");
+      lg.appendChild(t2);
+      const gt = generationsTotal(n);
+      const bits = [];
+      if (lv && lv.drug_concentration_g_per_L !== null) bits.push(lv.drug_concentration_g_per_L + " g/L");
+      if (gt) bits.push(gt.total.toFixed(0) + "g");
+      if (bits.length){
+        const t4 = mk("text", {x:LEFT-12, y:y+34, class:"llive", "text-anchor":"end"});
+        t4.textContent = bits.join("  ");
+        if (gt){
+          const ti2 = mk("title");
+          ti2.textContent = [
+            `${gt.total.toFixed(1)} generations of turnover`,
+            gt.inherited ? `  ${gt.own.toFixed(1)} here + ${gt.inherited.toFixed(1)} inherited from ${gt.from}` : null,
+            `  from ${gt.counted} dispenses`,
+            gt.skipped ? `  ${gt.skipped} excluded as untrustworthy` : null,
+            "A floor: growth below setpoint triggers no dilution and is not counted.",
+          ].filter(Boolean).join("\n");
+          t4.appendChild(ti2);
+        }
+        lg.appendChild(t4);
+      }
+    }
+    lg.onclick = () => select(id);
+    labels.appendChild(lg);
+  }
+
+  if (!ids.length){
+    const t = mk("text", {x:20, y:26, class:"tick"});
+    t.textContent = "No lines match the current filters.";
+    plot.appendChild(t);
+  }
+  requestAnimationFrame(syncGutter);
+}
+
+/* #plotwrap carries a horizontal scrollbar and #labels does not, so the plot has
+   ~15px less usable height and cannot scroll as far down. Left alone, the last
+   lane's name sits a scrollbar's height below the lane it belongs to at the
+   bottom of the range. Pad the label column by exactly the difference. */
+function syncGutter(){
+  const pw = el("plotwrap"), lb = el("labels");
+  if (!pw || !lb) return;
+  lb.style.paddingBottom = Math.max(0, pw.offsetHeight - pw.clientHeight) + "px";
+}
+
+function markerFor(type, x, y){
+  const c = {pg_change:"var(--pg-target)", media_switch:"var(--m9)", sampling:"var(--ok)",
+             anomaly:"var(--err)", intervention:"var(--warn)", phenotyping:"var(--accent)",
+             split:"var(--ink)", merge:"var(--ink)", inoculation:"var(--ink-3)",
+             reading:"var(--ink-3)", transfer:"var(--ink-3)"}[type] || "var(--ink-3)";
+  if (type === "split" || type === "merge")
+    return mk("path", {d:`M${x},${y-4.5} L${x+4.5},${y} L${x},${y+4.5} L${x-4.5},${y} Z`,
+                       fill:c, stroke:"var(--panel)", "stroke-width":1});
+  if (type === "anomaly")
+    return mk("path", {d:`M${x},${y-5} L${x+4.6},${y+3.5} L${x-4.6},${y+3.5} Z`, fill:c});
+  if (type === "phenotyping" || type === "sampling")
+    return mk("rect", {x:x-3.5, y:y-3.5, width:7, height:7, fill:c, rx:1.5});
+  return mk("circle", {cx:x, cy:y, r:3.4, fill:c});
+}
+
+/* --------------------------------------------------------------- pedigree */
+function renderPedigree(){
+  const svg = el("pedigree");
+  svg.replaceChildren();
+  const W = svg.clientWidth || 900, Hh = svg.clientHeight || 600;
+  svg.setAttribute("viewBox", `0 0 ${W} ${Hh}`);
+  const ids = visibleIds();
+  if (!ids.length) return;
+
+  /* group nodes by design cell so an un-branched pedigree still reads as the
+     2x2x2 design rather than a random cloud */
+  const groups = [...new Set(ids.map(i => MODEL.nodes[i].L.group || "—"))].sort();
+  const cols = Math.ceil(Math.sqrt(groups.length)) || 1;
+  const rows = Math.ceil(groups.length / cols);
+  const gc = {};
+  groups.forEach((g,i) => gc[g] = {
+    x: W * ((i % cols) + .5) / cols,
+    y: Hh * (Math.floor(i / cols) + .5) / rows
+  });
+
+  const P = ids.map((id,i) => {
+    const n = MODEL.nodes[id], c = gc[n.L.group || "—"];
+    return {id, n, x: c.x + Math.cos(i*2.4)*40, y: c.y + Math.sin(i*2.4)*40, vx:0, vy:0, c};
+  });
+  const byId = Object.fromEntries(P.map(p => [p.id, p]));
+  const E = MODEL.edges.filter(e => e.from in byId && e.to in byId);
+
+  /* tiny force sim: repulsion + parent springs + group attraction */
+  for (let it = 0; it < 320; it++){
+    const k = 1 - it/320;
+    for (let a = 0; a < P.length; a++) for (let b = a+1; b < P.length; b++){
+      const p = P[a], q = P[b];
+      let dx = q.x-p.x, dy = q.y-p.y, d2 = dx*dx+dy*dy || .01;
+      if (d2 > 26000) continue;
+      const f = 900 / d2, d = Math.sqrt(d2);
+      const ux = dx/d*f, uy = dy/d*f;
+      p.vx -= ux; p.vy -= uy; q.vx += ux; q.vy += uy;
+    }
+    for (const e of E){
+      const p = byId[e.from], q = byId[e.to];
+      const dx = q.x-p.x, dy = q.y-p.y, d = Math.hypot(dx,dy) || .01;
+      const f = (d - 78) * .045;
+      p.vx += dx/d*f; p.vy += dy/d*f; q.vx -= dx/d*f; q.vy -= dy/d*f;
+    }
+    for (const p of P){
+      p.vx += (p.c.x - p.x) * .022; p.vy += (p.c.y - p.y) * .022;
+      p.x += p.vx * k; p.y += p.vy * k; p.vx *= .82; p.vy *= .82;
+      p.x = Math.max(30, Math.min(W-30, p.x)); p.y = Math.max(26, Math.min(Hh-26, p.y));
+    }
+  }
+
+  for (const g of groups){
+    const t = mk("text", {x:gc[g].x, y:gc[g].y - Hh/rows/2 + 18, class:"glabel", "text-anchor":"middle"});
+    t.textContent = g.replace(/\|/g, " · "); svg.appendChild(t);
+  }
+  for (const e of E){
+    const p = byId[e.from], q = byId[e.to];
+    const mx = (p.x+q.x)/2, my = (p.y+q.y)/2 - 18;
+    svg.appendChild(mk("path", {d:`M${p.x},${p.y} Q${mx},${my} ${q.x},${q.y}`,
+                                class:"edge" + (e.merge ? " merge" : "")}));
+  }
+  for (const p of P){
+    const g = mk("g", {class:"node"}); g.dataset.id = p.id;
+    const L = p.n.L;
+    g.appendChild(mk("circle", {cx:p.x, cy:p.y, r: selected === p.id ? 11 : 8,
+      fill: L.strain === "BL21" ? "var(--accent)" : "var(--lb)",
+      stroke: (L.current_media||L.initial_media) === "M9" ? "var(--m9)" : "var(--ink-3)",
+      "stroke-width": 2, "fill-opacity": p.n.terminated ? .35 : .9}));
+    const t = mk("text", {x:p.x, y:p.y+21, class:"nlabel", "text-anchor":"middle"});
+    t.textContent = p.id; g.appendChild(t);
+    const ti = mk("title"); ti.textContent = `${p.id}\n${L.strain} · ${L.current_media||L.initial_media} · ${L.mode}`;
+    g.appendChild(ti);
+    g.onclick = () => select(p.id);
+    svg.appendChild(g);
+  }
+  if (!E.length){
+    const t = mk("text", {x:W/2, y:Hh-14, class:"tick", "text-anchor":"middle"});
+    t.textContent = "No splits or merges logged yet — every line is still a founder.";
+    svg.appendChild(t);
+  }
+}
+
+/* ----------------------------------------------------------------- detail */
+function select(id){ selected = id; selEvent = null; render(); }
+
+function renderDetail(){
+  const d = el("detail");
+  d.replaceChildren();
+  if (!MODEL) return;
+
+  /* an event pinned by clicking its marker is shown above whatever else the
+     panel is displaying */
+  const head = selEvent
+    ? `<h3>Selected event</h3>${evHTML(selEvent)}
+       <p class="empty"><span class="lnk" id="clr">clear event selection</span></p>`
+    : "";
+
+  if (!selected || !(selected in MODEL.nodes)){
+    const s = MODEL.summary, ex = (LOG.experiment||{});
+    d.innerHTML = head + `<h3>Experiment</h3>
+      <dl class="kv">
+        <dt>id</dt><dd>${esc(ex.id||"—")}</dd>
+        <dt>status</dt><dd>${esc(ex.status||"—")}</dd>
+        <dt>t0</dt><dd>${ex.start_timestamp ? fmtT(T(ex.start_timestamp)) : "—"}</dd>
+        <dt>elapsed</dt><dd>${ex.start_timestamp ? fmtEl((Date.now()-T(ex.start_timestamp))/H) : "—"}</dd>
+        <dt>schema</dt><dd>${esc(LOG.schema_version||"—")}</dd>
+        <dt>updated</dt><dd>${LOG.log_meta && LOG.log_meta.last_updated ? fmtT(T(LOG.log_meta.last_updated)) : "—"}</dd>
+      </dl>
+      <h3>Lineage</h3>
+      <dl class="kv">
+        <dt>founders</dt><dd>${(s.founders||[]).length}</dd>
+        <dt>nodes</dt><dd>${s.n_nodes ?? "—"}</dd>
+        <dt>edges</dt><dd>${s.n_edges ?? "—"}</dd>
+        <dt>splits</dt><dd>${s.n_splits ?? 0}</dd>
+        <dt>merges</dt><dd>${s.n_merges ?? 0}</dd>
+        <dt>max depth</dt><dd>${s.max_depth ?? 0}</dd>
+      </dl>
+      <h3>PG ramp</h3>
+      <dl class="kv">${rampRows()}</dl>
+      <h3>Reservoirs</h3>
+      ${reservoirRows()}
+      <p class="empty">Select a line to see its full event history.</p>`;
+    wireDetail(d);
+    return;
+  }
+  const n = MODEL.nodes[selected], L = n.L, cur = n.pg[n.pg.length-1];
+  const rampCur = (L.ramp||{}).current, rampHist = ((L.ramp||{}).history)||[];
+  const lv = liveFor(n);
+  const gt = generationsTotal(n);
+  const link = id => `<span class="lnk" data-goto="${esc(id)}">${esc(id)}</span>`;
+  const par = n.parents.length ? n.parents.map(link).join(", ") : "—  <span class='pill'>founder</span>";
+  const kid = n.children.length ? n.children.map(link).join(", ") : "—";
+
+  d.innerHTML = head + `<h2>${esc(selected)}</h2>
+    <div class="sub">${esc(L.strain)} · ${esc(L.current_media||L.initial_media)} · ${esc(L.mode)} · rep ${L.replicate ?? "—"}</div>
+    ${lv ? `<h3>Live from ${esc(L.unit)}</h3>
+    <dl class="kv">
+      <dt>burn rate</dt><dd>${lv.burn_rate_mL_per_h && lv.burn_rate_mL_per_h.total !== null
+        ? `${lv.burn_rate_mL_per_h.total} mL/h &nbsp;<span style="color:var(--ink-3)">(low ${
+            lv.burn_rate_mL_per_h.low}, high ${lv.burn_rate_mL_per_h.high})</span>`
+        : "—  <span class='pill'>no pump calibration</span>"}</dd>
+      <dt>high fraction</dt><dd>${lv.high_fraction !== null && lv.high_fraction !== undefined
+        ? (100*lv.high_fraction).toFixed(0) + "%" : "—"}</dd>
+      <dt>controller PG</dt><dd>${lv.drug_concentration_g_per_L !== null
+        ? lv.drug_concentration_g_per_L + " g/L" : "—"}</dd>
+      <dt>ramp steps</dt><dd>${lv.n_concentration_steps ?? "—"}</dd>
+      <dt>dispenses</dt><dd>${lv.n_dispense_events ?? "—"}</dd>
+      <dt>cumulative</dt><dd>${lv.cumulative_mL && lv.cumulative_mL.total
+        ? lv.cumulative_mL.total + " mL" : "—"}</dd>
+      <dt>last dispense</dt><dd>${lv.stale_h === null || lv.stale_h === undefined ? "—"
+        : (lv.stale_h > STALE_H
+            ? `<span style="color:var(--err)">${lv.stale_h} h ago — stalled</span>`
+            : lv.stale_h + " h ago")}</dd>
+    </dl>
+    ${lv.stale_h > STALE_H ? `<p class="sub" style="color:var(--warn);font-size:11.5px">
+      Dilution fires when the culture reaches its density setpoint, so no dispense for
+      ${lv.stale_h} h means OD has been below target that whole time — the culture is
+      thin, not merely slow. Check the OD trace: flat and low is washout or death.</p>` : ""}` : ""}
+    <h3>State</h3>
+    <dl class="kv">
+      <dt>status</dt><dd>${esc(L.status||"—")}</dd>
+      <dt>hardware</dt><dd>${esc(L.unit||"—")} vial ${L.vial ?? "—"}</dd>
+      <dt>t0</dt><dd>${fmtT(n.start)}</dd>
+      <dt>age</dt><dd>${fmtEl((n.end - n.start)/H)}</dd>
+      <dt>PG low</dt><dd>${cur.low} g/L</dd>
+      <dt>PG high</dt><dd>${cur.high} g/L</dd>
+      <dt>PG target</dt><dd>${cur.target === null || cur.target === undefined
+        ? "—  <span class='pill'>not recorded</span>" : cur.target + " g/L"}</dd>
+      <dt>reservoirs</dt><dd>${esc((L.reservoirs||{}).low||"—")} / ${esc((L.reservoirs||{}).high||"—")}</dd>
+      <dt>switches</dt><dd>${L.media_switch_count ?? 0}</dd>
+      <dt>PG steps</dt><dd>${L.pg_step_count ?? 0}</dd>
+    </dl>
+    ${gt ? `<h3>Generations</h3>
+    <dl class="kv">
+      <dt>total</dt><dd>${gt.total.toFixed(1)} <span style="color:var(--ink-3)">doublings of turnover</span></dd>
+      ${gt.inherited ? `<dt>on this line</dt><dd>${gt.own.toFixed(1)}</dd>
+      <dt>inherited</dt><dd>${gt.inherited.toFixed(1)} from ${esc(gt.from)}
+        <span class='pill'>largest parent</span></dd>` : ""}
+      <dt>from</dt><dd>${gt.counted} dispenses${
+        (gt.carriedTotal ? ` <span class='pill'>+${gt.carriedTotal.toFixed(1)} carried from earlier runs</span>` : "")}</dd>
+      ${gt.skipped ? `<dt>excluded</dt><dd><span style="color:var(--warn)">${gt.skipped} during logged
+        anomalies</span></dd>` : ""}
+    </dl>
+    <p class="sub" style="font-size:11.5px">Each dispense of v mL into ${
+      (DISP[`${L.unit}/${L.vial}`]||{}).volume || "?"} mL forces the culture to regrow
+      log2((V+v)/V) before the next one. This counts turnover only, so it is a floor:
+      a culture growing below its setpoint divides without triggering a dilution and
+      those divisions are invisible here.${gt.inherited ? " Merged lines take the larger parent's count, which assumes the spiked-in population dominated." : ""}</p>` : ""}
+    <h3>Ramp</h3>
+    <dl class="kv">
+      <dt>current</dt><dd>${rampCur ? rampCur.value_g_per_L + " g/L"
+        : "—  <span class='pill'>line ended</span>"}</dd>
+      ${rampHist.map(h => `<dt>${h.step_size.value_g_per_L} g/L</dt><dd>${fmtT(T(h.from))} → ${
+        h.to ? fmtT(T(h.to)) : "now"}${h.source === "initial configuration"
+          ? " <span class='pill'>backfilled</span>" : ""}</dd>`).join("")}
+    </dl>
+    <h3>Lineage</h3>
+    <dl class="kv">
+      <dt>parents</dt><dd>${par}</dd>
+      <dt>children</dt><dd>${kid}</dd>
+      <dt>generation</dt><dd>${n.depth}</dd>
+      <dt>founder</dt><dd>${(n.lin.roots||[]).map(link).join(", ")||"—"}</dd>
+      ${n.lin.occupies_vial_of ? `<dt>vial before</dt><dd>${link(n.lin.occupies_vial_of)}
+        <span class='pill'>no descent</span></dd>` : ""}
+      ${n.lin.terminated_at ? `<dt>ended</dt><dd>${fmtT(T(n.lin.terminated_at))}</dd>` : ""}
+    </dl>
+    <h3>Events (${n.evs.length})</h3>
+    ${n.evs.slice().reverse().map(evHTML).join("") || '<p class="empty">No events.</p>'}`;
+
+  wireDetail(d);
+}
+
+function wireDetail(d){
+  d.querySelectorAll("[data-goto]").forEach(a => a.onclick = () => select(a.dataset.goto));
+  const c = d.querySelector("#clr");
+  if (c) c.onclick = () => { selEvent = null; renderDetail(); };
+}
+
+/* Reservoir levels. Consumption forecasting lives in tools/media.py, not here:
+   the viewer only shows what the log states, and marks an unmeasured level as
+   unmeasured rather than implying it is current. */
+function reservoirRows(){
+  const items = ((LOG.reservoirs||{}).items)||[];
+  if (!items.length) return '<p class="empty">No reservoirs recorded.</p>';
+  const active = items.filter(r => r.status === "active");
+  const rows = active.map(r => {
+    const made = (r.volume_prepared||{}).value, lvl = (r.current_volume||{}).value;
+    const est = r.level_source !== "measured";
+    const frac = (made && lvl !== undefined) ? Math.max(0, Math.min(1, lvl/made)) : null;
+    const bar = frac === null ? "" :
+      `<div style="height:4px;border-radius:2px;background:var(--line);overflow:hidden;margin-top:3px">
+         <div style="height:100%;width:${(frac*100).toFixed(0)}%;background:${
+           frac < .25 ? "var(--err)" : frac < .5 ? "var(--warn)" : "var(--ok)"}"></div></div>`;
+    return `<div class="ev" style="padding:7px 10px;margin-bottom:6px">
+      <div class="ev-h"><span class="ev-t" style="font-family:var(--mono);font-size:11.5px">${esc(r.id)}</span>
+        <span class="ev-time">${lvl === undefined ? "—" : lvl + " / " + made + " L"}</span></div>
+      ${bar}
+      <div class="sub" style="font-size:11px;margin-top:4px">
+        ${(r.lines_fed||[]).length} lines${est ? ' · <span class="pill">level not measured</span>' : ""}</div>
+    </div>`;
+  }).join("");
+  const retired = items.filter(r => r.status !== "active").map(r => esc(r.id)).join(", ");
+  return rows + (retired ? `<p class="sub" style="font-size:11px">retired: ${retired}</p>` : "") +
+    `<p class="sub" style="font-size:11px">Run <span style="font-family:var(--mono)">tools/media.py</span>
+     for consumption rates and depletion forecasts.</p>`;
+}
+
+function rampRows(){
+  const r = ((LOG.design||{}).pg_ramp)||{};
+  const rows = [["type", r.type], ["step", fmt(r.step_size)], ["start", fmt(r.starting_concentration)],
+                ["trigger", r.trigger_rule], ["ceiling", r.ceiling]];
+  return rows.map(([k,v]) => `<dt>${esc(k)}</dt><dd>${v === null || v === undefined
+    ? "—  <span class='pill'>not recorded</span>" : esc(String(v))}</dd>`).join("");
+}
+
+function evHTML(e){
+  const p = e.params || {};
+  const rows = Object.entries(p).map(([k,v]) =>
+    `<div><span>${esc(k)}</span><span>${esc(fmt(v))}</span></div>`).join("");
+  const miss = (e.missing_fields||[]).length
+    ? `<div class="miss">missing: ${e.missing_fields.map(esc).join(", ")}</div>` : "";
+  const prov = e.provenance === "document"
+    ? ` <span class="pill">from ${esc(e.source_document||"document")}</span>` : "";
+  return `<div class="ev">
+    <div class="ev-h"><span class="ev-t">${esc(e.event_type)}</span>
+      <span class="sub">${esc(e.operator||"")}</span>${prov}
+      <span class="ev-time">${fmtT(T(e.timestamp))}</span></div>
+    ${e.notes ? `<div class="ev-note">${esc(e.notes)}</div>` : ""}
+    ${rows ? `<div class="ev-params">${rows}</div>` : ""}
+    ${miss}
+    <div class="sub" style="margin-top:6px;font-family:var(--mono);font-size:10.5px">${esc(e.event_id||"")}</div>
+  </div>`;
+}
+function esc(s){ return String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ------------------------------------------------------------------ shell */
+function render(){
+  if (!MODEL) return;
+  el("timeline").style.display  = view === "timeline" ? "flex" : "none";
+  el("axiswrap").style.display  = view === "timeline" ? "flex" : "none";
+  el("pedigree").style.display  = view === "pedigree" ? "block" : "none";
+  view === "timeline" ? renderTimeline() : renderPedigree();
+  renderDetail();
+  const ids = visibleIds();
+  const hidden = MODEL.order.length - ids.length;
+  const fb = [];
+  for (const [u, s2] of Object.entries(UNITS)){
+    const cls = s2.ok ? "" : " dead";
+    const label = s2.ok ? `${u} ${s2.n}v` : u;
+    fb.push(`<span title="${esc(s2.error || ("live, " + (s2.calibrated ? "calibrated" : "no pump_cal.json")))}">`
+            + `<span class="dot${cls}"></span>${esc(label)}</span>`);
+  }
+  el("feeds").innerHTML = fb.join(" &nbsp; ");
+
+  el("counts").innerHTML =
+    `<b>${ids.length}</b>/${MODEL.order.length} lines` +
+    (hidden ? ` <span style="color:var(--ink-3)">(${hidden} hidden)</span>` : "") +
+    ` &nbsp; <b>${MODEL.nEvents}</b> events &nbsp; ` +
+    `<b>${MODEL.summary.n_splits||0}</b> splits &nbsp; <b>${MODEL.summary.n_merges||0}</b> merges`;
+}
+
+function setLive(state, msg){
+  const d = el("live");
+  d.className = "dot" + (state === "stale" ? " stale" : state === "dead" ? " dead" : "");
+  el("livetxt").textContent = msg;
+}
+
+async function load(){
+  try{
+    const r = await fetch(SRC + "?t=" + Date.now(), {cache:"no-store"});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const txt = await r.text();
+    el("err").style.display = "none";
+    lastOK = Date.now();
+    if (txt === RAW){ setLive("ok", "live · no change"); return; }
+    RAW = txt;
+    LOG = JSON.parse(txt);
+    const first = !MODEL;
+    MODEL = derive(LOG);
+    el("title").textContent = (LOG.experiment||{}).id || "Evolution Provenance";
+    el("subtitle").textContent = (LOG.experiment||{}).title || "";
+    document.title = ((LOG.experiment||{}).id || "Evolution") + " provenance";
+    buildFilters();
+    if (first) fit();
+    render();
+    setLive("ok", "updated " + new Date().toLocaleTimeString());
+  }catch(err){
+    setLive("dead", "disconnected");
+    el("errmsg").textContent = String(err && err.message || err);
+    if (!MODEL) el("err").style.display = "grid";
+  }
+}
+
+function fit(){
+  if (!MODEL) return;
+  const w = Math.max(el("plotwrap").clientWidth - 40, 200);
+  const spanH = (MODEL.tMax - MODEL.tMin) / H;
+  pxPerHour = Math.max(2, Math.min(400, w / Math.max(spanH, 1)));
+  render();
+}
+
+el("btn-timeline").onclick = () => { view = "timeline";
+  el("btn-timeline").setAttribute("aria-pressed","true");
+  el("btn-pedigree").setAttribute("aria-pressed","false"); render(); };
+el("btn-pedigree").onclick = () => { view = "pedigree";
+  el("btn-pedigree").setAttribute("aria-pressed","true");
+  el("btn-timeline").setAttribute("aria-pressed","false"); render(); };
+function setScope(live){
+  scope = live ? "live" : "all";
+  el("btn-live").setAttribute("aria-pressed", String(live));
+  el("btn-all").setAttribute("aria-pressed", String(!live));
+  render();
+}
+el("btn-live").onclick = () => setScope(true);
+el("btn-all").onclick  = () => setScope(false);
+el("density").onclick = () => {
+  compact = !compact; setDensity();
+  el("density").textContent = compact ? "Comfortable" : "Compact";
+  render();
+};
+el("theme").onclick = () => {
+  theme = {system:"light", light:"dark", dark:"system"}[theme];
+  applyTheme();
+};
+el("zoom-in").onclick  = () => { pxPerHour = Math.min(400, pxPerHour*1.5); render(); };
+el("zoom-out").onclick = () => { pxPerHour = Math.max(2, pxPerHour/1.5); render(); };
+el("zoom-fit").onclick = fit;
+el("refresh").onclick  = () => { load(); loadConfig().then(pollLive); };
+el("q").oninput = e => { query = e.target.value.trim().toLowerCase(); render(); };
+el("plotwrap").addEventListener("scroll", e => {
+  el("labels").scrollTop = e.target.scrollTop;
+  el("axisclip").scrollLeft = e.target.scrollLeft;
+});
+
+/* #labels and #axisclip are overflow:hidden -- they are moved by the handler
+   above, not by the browser, which is what keeps the three panes locked
+   together. The cost is that the wheel is dead whenever the pointer is over
+   them: the lane names visibly run past the bottom of the window and turning the
+   wheel over them does nothing at all. That reads as a broken viewer rather than
+   as a layout choice, so forward the gesture to the one pane that does own the
+   scroll instead of giving these two their own. */
+for (const id of ["labels", "axisclip"]){
+  el(id).addEventListener("wheel", e => {
+    const pw = el("plotwrap");
+    if (!pw) return;
+    // Firefox reports deltas in lines, and page-mode wheels exist; both would be
+    // read as a handful of pixels and feel like the wheel is barely working.
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? pw.clientHeight : 1;
+    pw.scrollTop  += e.deltaY * k;
+    pw.scrollLeft += e.deltaX * k;
+    e.preventDefault();
+  }, {passive: false});
+}
+window.addEventListener("resize", () => { syncGutter(); if (view === "pedigree") render(); });
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "Escape"){ selected = null; selEvent = null; render(); }
+  if (e.key === "t") el("btn-timeline").click();
+  if (e.key === "p") el("btn-pedigree").click();
+  if (e.key === "a") el(scope === "live" ? "btn-all" : "btn-live").click();
+  if (e.key === "c") el("density").click();
+});
+
+applyTheme();
+setDensity();
+load();
+loadConfig().then(pollLive);
+setInterval(load, POLL_MS);
+setInterval(pollLive, 15000);
+setInterval(() => { if (lastOK && Date.now() - lastOK > POLL_MS*3) setLive("stale", "stale"); }, 2000);
+</script>
+</body>
+</html>

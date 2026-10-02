@@ -1,0 +1,505 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/or05/evolution-phase-2/schema/evolution_log.schema.json",
+  "title": "OR05 evolution log",
+  "description": "Structure of evolution_log.json. This file validates SHAPE. It deliberately does not validate referential integrity, because the things that matter most about this log are cross-field: that every params key appears in parameter_registry, that every event_type is declared in event_types, that lineage parents exist and form a DAG, that a line's PG floor matches the reservoir it draws from. Those are checked by tools/lineage.py and tools/test_media.py and cannot be expressed here. A file that passes this schema is well formed, not necessarily correct.",
+  "type": "object",
+  "required": [
+    "schema_version", "log_meta", "experiment", "design", "hardware",
+    "reservoirs", "conventions", "event_types", "parameter_registry",
+    "lineage_summary", "lines", "experiment_events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "#/$defs/semver" },
+    "log_meta": { "$ref": "#/$defs/logMeta" },
+    "experiment": {
+      "description": "Identity, operators, selective agent. Wholly unvalidated by design (LOG_PROTOCOL.md §3): narrative, read by people rather than checked by tools, like conventions rather than like hardware.",
+      "type": "object"
+    },
+    "design": {
+      "description": "Factors, cells, ramp definition, imbalance caveats. Wholly unvalidated by design (LOG_PROTOCOL.md §3), for the same reason as experiment. design.total_lines in particular is a fixed design constant (the original factorial), not a count to keep in sync with lines -- see CLAUDE.md.",
+      "type": "object"
+    },
+    "hardware": { "$ref": "#/$defs/hardware" },
+    "reservoirs": { "$ref": "#/$defs/reservoirs" },
+    "controller": {
+      "description": "The eVOLVER script's logic and parameters. The only top-level block the schema does not require present (LOG_PROTOCOL.md §3).",
+      "type": "object"
+    },
+    "conventions": {
+      "description": "Free prose. Every entry is a rule someone had to learn the hard way; none is machine-read.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "event_types": {
+      "description": "Every event_type used anywhere must be declared here. That constraint is enforced by tools/lineage.py, not by this schema.",
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "type": "string" }
+    },
+    "parameter_registry": {
+      "description": "Every key used in any event's params must be registered here. Enforced by tools/lineage.py.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/registryEntry" }
+    },
+    "lineage_summary": { "$ref": "#/$defs/lineageSummary" },
+    "lines": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/lineIdPattern" },
+      "additionalProperties": { "$ref": "#/$defs/line" }
+    },
+    "experiment_events": {
+      "description": "Events not attributable to a single line: reservoir preps, facility-wide config changes, hardware swaps.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    }
+  },
+
+  "$defs": {
+    "semver": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+
+    "timestamp": {
+      "description": "ISO 8601 with an explicit, colon-separated UTC offset (-04:00, never -0400 or Z). A bare local time is not accepted: several entries in this log were only interpretable because the offset was present. Z is rejected on purpose, even though most LLM clients emit it by default: Z asserts UTC, not which local timezone the operator meant, and this log has been burned by that ambiguity before (LOG_PROTOCOL.md §2). A client emitting Z must be told to emit local offset instead; the server-facing skill text must say so explicitly. The colon is required so one instant cannot have two string spellings that compare unequal (-0400 vs -04:00) -- SERVER_DESIGN.md Phase 1 #7.",
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}[+-]\\d{2}:\\d{2}$"
+    },
+
+    "eventId": { "type": "string", "pattern": "^EVT-\\d{5,}$" },
+
+    "lineIdPattern": {
+      "description": "<unit>-v<NN>, optionally with an occupancy suffix (#N), a split suffix (.a), or joined with + for a merge -- occupancy before split, e.g. patrick-v05#2.a, never .a#2 (LOG_PROTOCOL.md §4). Each merge addend requires v (patrick-v09+10 is not a merge id; patrick-v09+v10 is) and may optionally carry its own <unit>- prefix for a cross-unit merge, e.g. patrick-v09+plankton-v10 (settled 2026-08-27, SERVER_DESIGN.md Phase 2 #16). Same-unit merge addends omit the prefix, as every merge in this log has so far.",
+      "type": "string",
+      "pattern": "^[a-z]+-v\\d{2}(#\\d+)?(\\.[a-z])?(\\+([a-z]+-)?v\\d{2}(#\\d+)?)*$"
+    },
+
+    "reservoirId": {
+      "description": "<unit>/<media>-<pg g/L>. Names a hardware POSITION, not a bottle.",
+      "type": "string",
+      "pattern": "^[a-z]+/[A-Za-z0-9]+-\\d+(\\.\\d+)?$"
+    },
+
+    "concentration": {
+      "description": "A PG concentration. g/L is primary; mM is carried alongside so neither unit has to be recomputed by a reader.",
+      "type": "object",
+      "required": ["value_g_per_L", "value_mM", "unit_primary"],
+      "additionalProperties": false,
+      "properties": {
+        "value_g_per_L": { "type": "number", "minimum": 0 },
+        "value_mM": { "type": "number", "minimum": 0 },
+        "unit_primary": { "const": "g/L" }
+      }
+    },
+
+    "quantity": {
+      "description": "Any non-PG numeric with a unit. Value may be null when the quantity is known to exist but was not measured. A RANGE is not a quantity with a string value (settled 2026-08-27, SERVER_DESIGN.md Phase 2 #14) -- use quantityRange instead, so a bound stays a bound rather than decaying into free text.",
+      "type": "object",
+      "required": ["value", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": ["number", "null"] },
+        "unit": { "type": "string" }
+      }
+    },
+
+    "quantityRange": {
+      "description": "A quantity known only as a range, e.g. a replacement interval of '2-3 days'. min/max are both required -- a one-sided bound is a quantity with a level_qualifier where that concept applies (reservoirItem), not a quantityRange with one end left off.",
+      "type": "object",
+      "required": ["min", "max", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "unit": { "type": "string" }
+      }
+    },
+
+    "logMeta": {
+      "type": "object",
+      "required": ["last_updated", "event_counter"],
+      "additionalProperties": false,
+      "properties": {
+        "maintained_by": { "type": "string" },
+        "last_updated": { "$ref": "#/$defs/timestamp" },
+        "event_counter": {
+          "description": "Count of DISTINCT event ids across lines and experiment_events. An event shared by several lines counts once.",
+          "type": "integer", "minimum": 0
+        },
+        "next_event_id": { "$ref": "#/$defs/eventId" },
+        "commit_policy": { "type": "string" },
+        "file_layout": { "type": "string" },
+        "tools": { "type": "string" },
+        "viewer": { "type": "string" },
+        "schema_file": { "type": "string" },
+        "validation": { "type": "string" }
+      }
+    },
+
+    "registryValueType": {
+      "enum": ["string", "number", "integer", "boolean", "array", "object",
+               "quantity", "concentration", "eventId", "lineId", "reservoirId", "any"]
+    },
+
+    "registryEntry": {
+      "description": "What a params key means. New keys are added here rather than the schema being changed, which is what lets the log absorb dimensions nobody anticipated. SERVER_DESIGN.md Phase 1 #4: type is what lets one definition generate both tools/lineage.py's cross-field enforcement (check_param_types) and, later, a validator/skill for the server.",
+      "type": "object",
+      "required": ["description", "status", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "unit": { "type": ["string", "null"] },
+        "type": {
+          "description": "The value's shape when present. Primitives (string/number/integer/boolean/array/object) plus the log's own semantic shapes: quantity ({value, unit}), concentration ({value_g_per_L, value_mM, unit_primary}), eventId, lineId, reservoirId. 'any' means deliberately unconstrained (corrected_from mirrors whatever field it corrects, so it can be any shape). A 2-item array means the value is legitimately one type or the other (e.g. a single reservoirId or an array of them) -- not a defect, a few fields really do vary. null is always separately permitted regardless of type: that is the missing_fields convention, not a type question.",
+          "oneOf": [
+            { "$ref": "#/$defs/registryValueType" },
+            { "type": "array", "items": { "$ref": "#/$defs/registryValueType" }, "minItems": 2, "maxItems": 2 }
+          ]
+        },
+        "enum": {
+          "description": "Present only when the value space is closed for a reason this schema already commits to elsewhere (a role, a bound-qualifier, an already-enumerated pgRegime field) -- not merely because only a few values happen to have been used so far. Most string-typed keys deliberately have no enum: an anomaly_type or observation_type is an open, growing vocabulary in the same way event_type is, extended by using a new value, not by a schema change.",
+          "type": "array", "items": { "type": "string" }, "minItems": 1
+        },
+        "items": {
+          "description": "Element type, when type is (or includes) array.",
+          "$ref": "#/$defs/registryValueType"
+        },
+        "description": { "type": "string", "minLength": 1 },
+        "first_seen": { "type": ["string", "null"] },
+        "applies_to_event_types": { "type": "array", "items": { "type": "string" } },
+        "status": { "enum": ["active", "planned", "retired"] },
+        "note": { "type": "string" }
+      }
+    },
+
+    "event": {
+      "description": "One recorded action or observation. params is open by design; every key in it must be registered.",
+      "type": "object",
+      "required": ["event_id", "timestamp", "event_type", "operator", "provenance", "params", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "event_id": { "$ref": "#/$defs/eventId" },
+        "timestamp": { "$ref": "#/$defs/timestamp" },
+        "timestamp_precision": {
+          "description": "Present when the timestamp is coarser than it looks. Absent means the minute is meant.",
+          "enum": ["minute", "hour", "day"]
+        },
+        "elapsed_h": { "type": ["number", "null"] },
+        "event_type": { "type": "string", "minLength": 1 },
+        "operator": { "type": "string" },
+        "provenance": {
+          "description": "reported: told to the log by the operator. document: reconstructed from a file. instrument: read from the rig -- not yet used by any event; reserved for tools/evolver_api.py or a future ingestion pipeline writing directly. derived: computed by a tool from what the log already contains, with no new outside information entering at all -- also not yet used. Distinct from an operator reporting the OUTPUT of a calculation (e.g. pg_estimated_actual from the washout model in EVT-00089..092): that stays 'reported', because the operator's judgment about which method and confidence to apply is itself new information entering the log. 'derived' is for the narrower case of a script appending an event on its own, e.g. a future server-computed projection. A '(corrected)' suffix marks an entry whose value or diagnosis was later amended in place (SERVER_DESIGN.md Phase 2 #9).",
+          "type": "string",
+          "pattern": "^(reported|document|instrument|derived)( \\(corrected\\))?$"
+        },
+        "scope": { "enum": ["facility"] },
+        "caused_by_event": { "$ref": "#/$defs/eventId" },
+        "supersedes": {
+          "description": "Event whose finding or framing this event replaces; the superseded event is never edited. This is the CURRENT correction idiom (SERVER_DESIGN.md Phase 1 #8): schema-level and typed, so a server can validate it. The 11 older events using provenance 'reported (corrected)' plus corrected_from/corrected_at instead, and EVT-00258 which used params.supersedes before this field existed, are not migrated -- read both idioms, write only this one.",
+          "$ref": "#/$defs/eventId"
+        },
+        "source_document": { "type": "string" },
+        "params": { "type": "object" },
+        "notes": { "type": "string" },
+        "missing_fields": {
+          "description": "Fields known to be absent. An empty or missing array asserts nothing is known to be missing, which is a claim. May name any fact known absent even if it was never given a params key -- that does not need a registry entry just to be nameable here. Separately, every params key present with value null MUST be named here (LOG_PROTOCOL.md, 'missing_fields, precisely'); tools/lineage.py enforces that direction, grandfathering 57 pre-2026-08-27 exceptions the append-only rule forbids correcting in place.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "lineage": {
+      "type": "object",
+      "required": ["parents", "children", "roots", "depth", "is_founder", "created_at"],
+      "additionalProperties": false,
+      "properties": {
+        "parents": {
+          "description": "Immediate ancestors. Empty for a founder. Two or more means a merge, where several populations contributed.",
+          "type": "array", "items": { "$ref": "#/$defs/lineIdPattern" }
+        },
+        "children": {
+          "description": "Derived by tools/lineage.py from children's parents; never edited directly.",
+          "type": "array", "items": { "$ref": "#/$defs/lineIdPattern" }
+        },
+        "roots": { "type": "array", "items": { "$ref": "#/$defs/lineIdPattern" } },
+        "depth": { "type": "integer", "minimum": 0 },
+        "is_founder": { "type": "boolean" },
+        "created_by_event": { "oneOf": [{ "$ref": "#/$defs/eventId" }, { "type": "null" }] },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "terminated_by_event": { "oneOf": [{ "$ref": "#/$defs/eventId" }, { "type": "null" }] },
+        "terminated_at": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "occupies_vial_of": {
+          "description": "Hardware continuity only. A line here does NOT descend from the named line; that would be recorded in parents.",
+          "$ref": "#/$defs/lineIdPattern"
+        },
+        "note": { "type": "string" }
+      },
+      "allOf": [{
+        "description": "A founder has no parents, and anything with parents is not a founder.",
+        "if": { "properties": { "is_founder": { "const": true } }, "required": ["is_founder"] },
+        "then": { "properties": { "parents": { "maxItems": 0 } } },
+        "else": { "properties": { "parents": { "minItems": 1 } } }
+      }]
+    },
+
+    "pgRegime": {
+      "description": "The exposure envelope a line is dosed between, plus what is believed about the vial itself. low and high are reservoir concentrations; vial_concentration is controller state and is not maintained by hand.",
+      "type": "object",
+      "required": ["low", "high", "effective_from"],
+      "additionalProperties": false,
+      "properties": {
+        "low": { "$ref": "#/$defs/concentration" },
+        "high": { "$ref": "#/$defs/concentration" },
+        "ceiling": {
+          "description": "Same value as high, by definition -- not a separate design constant (settled 2026-08-27, SERVER_DESIGN.md Phase 2 #13). Kept as a distinct field for contexts that are talking about the safety bound specifically rather than the current dosing regime; tools/lineage.py enforces that it always equals high when both are present.",
+          "$ref": "#/$defs/concentration"
+        },
+        "effective_from": { "$ref": "#/$defs/timestamp" },
+        "set_by_event": { "oneOf": [{ "$ref": "#/$defs/eventId" }, { "type": "null" }] },
+        "source_reservoirs": {
+          "type": "object",
+          "required": ["low", "high"],
+          "properties": {
+            "low": { "$ref": "#/$defs/reservoirId" },
+            "high": { "$ref": "#/$defs/reservoirId" }
+          }
+        },
+        "vial_concentration": { "oneOf": [{ "$ref": "#/$defs/concentration" }, { "type": "null" }] },
+        "vial_concentration_source": { "type": ["string", "null"] },
+        "vial_concentration_estimated_actual": {
+          "description": "Present only when the controller's value and the physical state are known to differ. Model-derived, never a measurement.",
+          "oneOf": [{ "$ref": "#/$defs/concentration" }, { "type": "null" }]
+        },
+        "vial_concentration_divergence_note": { "type": "string" },
+        "pg_reliable": {
+          "description": "False when this line's recorded PG concentrations cannot be trusted, independently of whether its OD can. Same meaning as the params key of the same name recorded on individual anomaly events; this is the line's current aggregate state, those are the per-event findings it derives from. Named pg_history_reliable until SERVER_DESIGN.md Phase 1 #5 -- renamed to converge with LOG_PROTOCOL.md §7 and the params key, which both already used pg_reliable.",
+          "type": "boolean"
+        },
+        "pg_error_direction": {
+          "description": "The direction of a dosing error, once diagnosed (LOG_PROTOCOL.md §7). received_none: no dose delivered at all (e.g. reservoir empty, sipper above the line). received_double: a dose delivered twice. received_partial: an incomplete dose (less volume than commanded, this dilution only). received_excess / received_deficit: the vial's PG history reads more/less concentrated than it actually was (e.g. after a raised low reservoir bypassed the growth gate). exchanged_with_partner: this vial's dose was swapped with a specific other vial's (a mis-wired pump), see params.partner_vial. All six listed here in full -- SERVER_DESIGN.md Phase 2 #10 flagged LOG_PROTOCOL §7 trailing off with an ellipsis after only four.",
+          "enum": ["received_none", "received_double", "received_partial",
+                   "received_excess", "received_deficit", "exchanged_with_partner"]
+        },
+        "missing_fields": {
+          "description": "Same convention as event.missing_fields: may name any fact known absent (no pgRegime field needs to exist for it to be nameable here), and any of this object's own fields sitting at null must be named.",
+          "type": "array", "items": { "type": "string" }
+        },
+        "note": { "type": "string" }
+      }
+    },
+
+    "rampInterval": {
+      "type": "object",
+      "required": ["step_size", "from"],
+      "additionalProperties": false,
+      "properties": {
+        "step_size": { "$ref": "#/$defs/concentration" },
+        "from": { "$ref": "#/$defs/timestamp" },
+        "to": { "oneOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "set_by_event": { "oneOf": [{ "$ref": "#/$defs/eventId" }, { "type": "null" }] },
+        "source": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+
+    "line": {
+      "type": "object",
+      "required": [
+        "line_id", "unit", "vial", "strain", "initial_media", "current_media",
+        "mode", "status", "t0", "lineage", "pg_regime", "reservoirs", "events",
+        "media_switch_count"
+      ],
+      "properties": {
+        "line_id": { "$ref": "#/$defs/lineIdPattern" },
+        "unit": {
+          "description": "The eVOLVER unit this line's culture currently occupies, or null if it is not currently on any evolver (both unit and vial are null together, never just one) -- a real, named state, not a missing value, for a culture that has been pelleted/removed and not yet placed in a new sleeve. See hardware_swap's vacate/new_unit+new_vial params.",
+          "type": ["string", "null"]
+        },
+        "vial": {
+          "description": "See unit's description -- null under the exact same condition, together with unit.",
+          "type": ["integer", "null"], "minimum": 0, "maximum": 15
+        },
+        "strain": { "type": "string" },
+        "initial_media": { "type": "string" },
+        "current_media": { "type": "string" },
+        "replicate": { "type": ["integer", "null"] },
+        "mode": { "enum": ["constant", "switch"] },
+        "group": { "type": "string" },
+        "status": { "enum": ["active", "ended"] },
+        "t0": { "$ref": "#/$defs/timestamp" },
+        "lineage": { "$ref": "#/$defs/lineage" },
+        "pg_regime": { "$ref": "#/$defs/pgRegime" },
+        "ramp": {
+          "type": "object",
+          "required": ["history"],
+          "properties": {
+            "current": { "oneOf": [{ "$ref": "#/$defs/concentration" }, { "type": "null" }] },
+            "history": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/rampInterval" } }
+          }
+        },
+        "pg_high_max_reached": {
+          "description": "The highest high-reservoir concentration this line has ever actually drawn from, over its own history. Optional and operator-noted, not derived -- it only needs recording once a line has moved between high reservoirs of different strength, which has not happened to any line yet (every line's value today just equals its current high, settled 2026-08-27, SERVER_DESIGN.md Phase 2 #13).",
+          "oneOf": [{ "$ref": "#/$defs/concentration" }, { "type": "null" }]
+        },
+        "reservoirs": {
+          "type": "object",
+          "required": ["low", "high"],
+          "additionalProperties": false,
+          "properties": {
+            "low": { "$ref": "#/$defs/reservoirId" },
+            "high": { "$ref": "#/$defs/reservoirId" }
+          }
+        },
+        "input_pump2": {
+          "description": "Controller setting naming the HIGH-PG pump for this vial. Recorded because a mis-set value once exchanged two vials' doses for an entire run without failing visibly.",
+          "type": ["integer", "null"]
+        },
+        "media_switch_count": {
+          "description": "How many media_switch events this line's own history actually contains -- a real count, not a flag. Always 0 for a constant-mode line (media_switch only applies to switch-mode lines). Derived, never hand-edited: tools/lineage.py's recompute() sets it by counting media_switch entries in this line's own events[], the same way lineage.children/roots/depth are recomputed, not incrementally maintained by whatever wrote the triggering event. Literal: counts every event_type==media_switch entry in events[], with no exceptions -- confirmed by round-1 adversarial testing (evolution_log_server) to include one the server declined to actually apply (e.g. a media_switch missing media_to, recorded but current_media untouched -- 'applied: false' in the write response), and to include BOTH a media_switch and a later correction of it that carries supersedes on the same line, since supersedes only marks which event corrects which, it does not remove the corrected one from events[]. If what's wanted is 'how many times this line's media background actually, successfully changed,' that is NOT always the same number as this field once either of those idioms is in play -- recompute() does not attempt to distinguish them.",
+          "type": "integer", "minimum": 0
+        },
+        "pg_step_count": { "type": "integer", "minimum": 0 },
+        "replicate_independence": { "type": "string" },
+        "replicate_independence_set_by": { "$ref": "#/$defs/eventId" },
+        "replicate_independence_superseded": {
+          "description": "The previous replicate_independence wording, preserved rather than deleted when a later event (replicate_independence_set_by) overturns the framing but not the divergence-time fact underneath it.",
+          "type": "string"
+        },
+        "temperature_regime_note": { "type": "string" },
+        "generations_carried_forward": {
+          "type": "object",
+          "required": ["value", "unit"],
+          "properties": {
+            "value": { "type": "number", "minimum": 0 },
+            "unit": { "const": "generations" },
+            "from_run": { "type": "string" },
+            "dispenses": { "type": "integer" },
+            "excluded_dispenses": { "type": "integer" },
+            "clipped_to_line_lifetime": { "type": "boolean" },
+            "note": { "type": "string" }
+          }
+        },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } }
+      },
+      "additionalProperties": false,
+      "allOf": [{
+        "description": "A line with a termination timestamp must not still be active.",
+        "if": {
+          "properties": { "lineage": { "properties": { "terminated_at": { "type": "string" } },
+                                       "required": ["terminated_at"] } },
+          "required": ["lineage"]
+        },
+        "then": { "properties": { "status": { "const": "ended" } } }
+      }]
+    },
+
+    "fillRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prepared_at": { "$ref": "#/$defs/timestamp" },
+        "volume_prepared": { "$ref": "#/$defs/quantity" },
+        "retired_at": { "$ref": "#/$defs/timestamp" },
+        "remaining_at_swap": { "oneOf": [{ "$ref": "#/$defs/quantity" }, { "type": "null" }] },
+        "remaining_at_swap_basis": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+
+    "reservoirItem": {
+      "type": "object",
+      "required": ["id", "unit", "media", "role", "pg", "status", "volume_prepared", "prepared_at"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/reservoirId" },
+        "unit": { "type": "string" },
+        "media": { "type": "string" },
+        "role": { "enum": ["low", "high"] },
+        "pg": { "$ref": "#/$defs/concentration" },
+        "status": { "enum": ["active", "retired"] },
+        "volume_prepared": { "$ref": "#/$defs/quantity" },
+        "prepared_at": { "$ref": "#/$defs/timestamp" },
+        "prepared_by_event": { "oneOf": [{ "$ref": "#/$defs/eventId" }, { "type": "null" }] },
+        "current_volume": { "oneOf": [{ "$ref": "#/$defs/quantity" }, { "type": "null" }] },
+        "level_as_of": { "$ref": "#/$defs/timestamp" },
+        "level_source": {
+          "description": "measured: reported from the bottle. prepared: nothing has been read since it was made, so current_volume is the prepared volume and any draw since is inferred.",
+          "enum": ["measured", "prepared"]
+        },
+        "level_qualifier": { "enum": ["exact", "approximate", "at_least"] },
+        "level_set_by_event": { "$ref": "#/$defs/eventId" },
+        "lines_fed": { "type": "array", "items": { "$ref": "#/$defs/lineIdPattern" } },
+        "replaces": { "$ref": "#/$defs/reservoirId" },
+        "bottle_origin": { "type": "object" },
+        "fill_history": { "type": "array", "items": { "$ref": "#/$defs/fillRecord" } }
+      }
+    },
+
+    "reservoirs": {
+      "type": "object",
+      "required": ["items"],
+      "properties": {
+        "configuration": { "type": "string" },
+        "description": { "type": "string" },
+        "volume_tracking": { "type": "string" },
+        "pg_stability_caveat": { "type": "string" },
+        "policy": {
+          "description": "Otherwise free-form (like design/experiment); replacement_interval is typed because it's the one place a bound has historically decayed into a string (SERVER_DESIGN.md Phase 2 #14).",
+          "type": "object",
+          "properties": {
+            "replacement_interval": {
+              "oneOf": [{ "$ref": "#/$defs/quantity" }, { "$ref": "#/$defs/quantityRange" }]
+            }
+          }
+        },
+        "inoculation_media": { "type": "object" },
+        "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/reservoirItem" } }
+      }
+    },
+
+    "hardware": {
+      "type": "object",
+      "required": ["units"],
+      "properties": {
+        "platform": { "type": "string" },
+        "note": { "type": "string" },
+        "units": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": { "enum": ["constant", "switch"] },
+              "vials_in_use": { "type": "array", "items": { "type": "integer" } },
+              "vials_empty": { "type": "array", "items": { "type": "integer" } },
+              "n_lines": { "type": "integer", "minimum": 0 },
+              "note": { "type": "string" },
+              "vials_out_of_service": { "type": "object" },
+              "vials_degraded": { "type": "object" },
+              "body_history": { "type": "array" },
+              "body_changed_at": { "$ref": "#/$defs/timestamp" },
+              "body_change_event": { "$ref": "#/$defs/eventId" }
+            }
+          }
+        }
+      }
+    },
+
+    "lineageSummary": {
+      "description": "Derived by tools/lineage.py from the lines block. Never edited by hand.",
+      "type": "object",
+      "required": ["founders", "n_nodes", "n_edges", "max_depth"],
+      "additionalProperties": false,
+      "properties": {
+        "founders": { "type": "array", "items": { "$ref": "#/$defs/lineIdPattern" } },
+        "n_nodes": { "type": "integer", "minimum": 0 },
+        "n_edges": { "type": "integer", "minimum": 0 },
+        "max_depth": { "type": "integer", "minimum": 0 },
+        "n_splits": { "type": "integer", "minimum": 0 },
+        "n_merges": { "type": "integer", "minimum": 0 },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}
