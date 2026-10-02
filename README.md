@@ -38,24 +38,31 @@ for draft 2020-12, before it writes anything.
 ```
 git clone https://github.com/amoghpj/evolution_log.git or06
 cd or06
-EXPERIMENT=OR06 IDENTITY="OR06 evolution, phase 1" \
-UNITS="patrick plankton" \
-RESERVOIRS="patrick:LB:low:0 patrick:LB:high:5 plankton:LB:low:0 plankton:LB:high:5" \
-OPERATOR_INITIALS=AJ \
 ./init_experiment.sh
 ```
 
-or edit the block at the top of `init_experiment.sh` instead of passing
-variables. What you must decide first:
+In a terminal it asks for each setting in turn, refuses a bad answer on the
+spot (and says why), then shows everything and asks before writing anything.
+Without a terminal it takes the same settings from the environment instead,
+for scripting:
+
+```
+EXPERIMENT=OR06 IDENTITY="OR06 evolution, phase 1" UNITS="patrick plankton" \
+RESERVOIRS="patrick:LB:low:0 patrick:LB:high:5 plankton:LB:low:0 plankton:LB:high:5" \
+OPERATOR_INITIALS=AJ ./init_experiment.sh </dev/null
+```
+
+`./init_experiment.sh -i` asks even for settings already in the environment,
+offering them as defaults. What it asks for:
 
 | Setting | What | |
 |---|---|---|
 | `EXPERIMENT`, `IDENTITY` | short name + one line. The server introduces the experiment to an LLM by these. | required |
-| `UNITS` | eVOLVER unit names | required |
-| `RESERVOIRS` | the media bottles, `unit:media:role:pg_g_per_L`; role is `low`/`high` | required, at least one |
+| `UNITS` | eVOLVER unit names, lowercase letters only (the schema's rule) | required |
+| `RESERVOIRS` | the media bottles, `unit:media:role:pg_g_per_L`; role is `low`/`high` (asked per unit) | required, at least one |
 | `PREPARED_AT` | when the bottles were made | blank = now, and it says so |
 | `PORT`, `BIND_HOST` | where the server listens | default `8556`, `0.0.0.0` |
-| `UNIT_PATHS` | JSON, unit -> that unit's git checkout of the eVOLVER code, for `/config` | optional |
+| `UNIT_PATHS` | each unit's git checkout of the eVOLVER code, for `/config` (asked per unit; JSON in the environment) | optional |
 | `DASHBOARDS` | `unit=url` of each unit's `dashboard.py`, for live pump data | optional |
 
 You do **not** declare vials. Each culture becomes a line when it is
@@ -64,7 +71,8 @@ inoculated, through the LLM (`POST /lines`).
 It writes `evolution_log.json` and `viewer.config.json` and commits them,
 and writes `secrets/operators.json` (the token, printed once) and
 `secrets/server.env` (everything the server reads). `secrets/` is gitignored.
-It refuses to run where a log already exists.
+It refuses to run where a log already exists. If it fails partway, it removes
+everything it wrote, so you can fix the problem and simply run it again.
 
 **3. Run it.**
 
