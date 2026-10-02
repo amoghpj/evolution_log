@@ -335,9 +335,17 @@ try {
         "live: derive() stays pure -- no live data leaks into the log model");
   check(!/localStorage\.setItem\(["']or05-live/.test(src), "live: nothing persisted");
 
-  /* the config the operator actually filled in */
-  const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, "viewer.config.json"), "utf8"));
-  const logUnits = Object.keys(real.hardware.units);
+  /* the config the operator actually filled in -- checked against THIS
+     checkout's own log, the one it was generated for, not the reference log
+     the rest of this suite uses. Both are written by init_experiment.sh, so
+     before it has run there is nothing to pair. */
+  const cfgPath = path.join(ROOT, "viewer.config.json"), ownPath = path.join(ROOT, "evolution_log.json");
+  if (!fs.existsSync(cfgPath) || !fs.existsSync(ownPath)) {
+    console.log("SKIP  live: viewer.config.json vs this checkout's log -- not initialised (./init_experiment.sh)");
+  } else {
+  const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  const own = JSON.parse(fs.readFileSync(ownPath, "utf8"));
+  const logUnits = Object.keys(own.hardware.units);
   const cfgUnits = Object.keys(cfg.units);
   check(cfgUnits.every(u => logUnits.includes(u)),
         `live: every configured unit exists in the log (${cfgUnits.join(", ")})`);
@@ -345,12 +353,13 @@ try {
         "live: every configured url is well formed");
 
   /* every active line must be addressable by the feed */
-  const unreachable = Object.values(real.lines)
+  const unreachable = Object.values(own.lines)
     .filter(L => L.status === "active" && !cfg.units[L.unit])
     .map(L => L.line_id);
   check(unreachable.length === 0,
         "live: every active line belongs to a configured unit" +
         (unreachable.length ? " -- orphaned: " + unreachable.join(", ") : ""));
+  }
 }
 
 /* ---- edges leave the parent at the transfer, not at the parent's end ---- */
