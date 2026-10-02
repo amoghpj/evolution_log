@@ -72,7 +72,11 @@ class DashboardSettings:
                     "EVOLVER_DASHBOARD_URLS must map each unit to a URL STRING; %s "
                     "%s not. Write {\"patrick\": \"http://host:8050\"}, not the "
                     "viewer.config.json shape {\"patrick\": {\"url\": ...}}"
-                    % (", ".join("%r -> %r" % (k, v) for k, v in sorted(bad.items())),
+                    # The unit name only, and the TYPE of what it maps to --
+                    # never the value. It is a URL, and a URL can carry
+                    # user:password; this message reaches GET /media and
+                    # GET /pump_events, which need no token.
+                    % (", ".join("%r -> a %s" % (k, type(v).__name__) for k, v in sorted(bad.items())),
                        "is" if len(bad) == 1 else "are"))
                 return
             self.units = {str(k): v.strip().rstrip("/") for k, v in mapping.items()}

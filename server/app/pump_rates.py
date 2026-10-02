@@ -466,7 +466,10 @@ def _looks_like_json(response) -> bool:
 
 
 _CONTROL = {c: None for c in list(range(0, 9)) + list(range(11, 32)) + [127]
-            + list(range(128, 160))}
+            + list(range(128, 160))
+            # bidi marks, embeddings, overrides and isolates: they make rig
+            # text DISPLAY differently from what it says
+            + [0x200E, 0x200F] + list(range(0x202A, 0x202F)) + list(range(0x2066, 0x206A))}
 MAX_RIG_TEXT = 400
 
 
@@ -529,10 +532,14 @@ def _vials_by_number(body: dict) -> tuple[dict, str | None]:
             return {}, "the rig's `vials` list holds a %s, not an object" % type(entry).__name__
         if "vial" not in entry:
             return {}, "the rig reported a vial entry with no `vial` number"
-        try:
-            number = int(entry["vial"])
-        except (TypeError, ValueError):
-            return {}, "the rig reported a vial number that is not a number: %r" % entry["vial"]
+        raw = entry["vial"]
+        # int() alone accepted True (-> 1) and 1.9 (-> 1), and raised
+        # OverflowError -- a 500, uncaught -- on the JSON token Infinity.
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)) \
+                or raw != raw or raw in (float("inf"), float("-inf")) or int(raw) != raw:
+            return {}, ("the rig reported a vial number that is not a whole number: %s"
+                        % (_text(repr(raw), 60) or "unprintable"))
+        number = int(raw)
         if number in out:
             # Last-entry-wins would silently discard the real volume, in the
             # direction that says there is more media left than there is.
@@ -564,6 +571,7 @@ class UnitClient:
         self.timeout_s = timeout_s
         self._now = now
         self._deadline = None
+        self.budget_s = PUMP_BUDGET_S  # named in the messages; the caller sets the deadline
         self._summary = None          # cached /api/v1/vials, for the fallback
 
     def _get(self, path: str, params: dict | None = None):
@@ -605,7 +613,7 @@ class UnitClient:
                             "%s was still sending after this request's %.0f s budget ran "
                             "out (%d bytes so far). A slow trickle defeats a per-read "
                             "timeout by construction, so the request is abandoned here"
-                            % (self.safe_base, PUMP_BUDGET_S, total))
+                            % (self.safe_base, self.budget_s, total))
                     total += len(chunk)
                     if total > MAX_BODY_BYTES:
                         raise _FetchProblem(
@@ -626,7 +634,7 @@ class UnitClient:
                 raise _FetchProblem(
                     "%s did not answer within the time left in this request's %.0f s "
                     "budget. That is this server's limit, not evidence about the rig"
-                    % (self.safe_base, PUMP_BUDGET_S)) from exc
+                    % (self.safe_base, self.budget_s)) from exc
             raise _FetchProblem(self._unreachable(exc)) from exc
 
     def _accept(self, response, what: str) -> tuple[dict | None, str | None]:
@@ -941,24 +949,25 @@ class UnitClient:
         one asked about -- and the error runs in the optimistic direction as
         often as not, reporting more media left than there is."""
         if not isinstance(generated_at, str):
-            return ("%s reports generated_at as %r, so its clock cannot be checked against "
-                    "this server's" % (self.safe_base, generated_at))
+            return ("%s reports generated_at as a %s, not a timestamp, so its clock cannot "
+                    "be checked against this server's"
+                    % (self.safe_base, type(generated_at).__name__))
+        shown = _text(generated_at, 60) or "blank"
         try:
             moment = _parse(generated_at)
-        except ValueError as exc:
-            return "%s reports an unparseable generated_at (%r): %s" % (self.safe_base,
-                                                                        generated_at, exc)
+        except ValueError:
+            return "%s reports an unparseable generated_at (%s)" % (self.safe_base, shown)
         if moment.tzinfo is None:
-            return ("%s reports generated_at with no UTC offset (%r), so the interval it "
+            return ("%s reports generated_at with no UTC offset (%s), so the interval it "
                     "integrated cannot be placed on this server's clock"
-                    % (self.safe_base, generated_at))
+                    % (self.safe_base, shown))
         reference = self._now or datetime.now().astimezone()
         drift_min = abs((reference - moment).total_seconds()) / 60.0
         if drift_min > RIG_SKEW_TOLERANCE_MIN:
             return ("%s's clock is %.0f minutes from this server's (it reports %s). It "
                     "resolved the anchor against that clock, so its volumes describe a "
                     "different interval than the one asked about"
-                    % (self.unit, drift_min, generated_at))
+                    % (self.unit, drift_min, shown))
         return None
 
     def _identity_problem(self, body: dict) -> str | None:
