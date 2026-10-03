@@ -49,8 +49,8 @@ _EVOLVER_NAMES = ["spongebob", "gary", "patrick", "sandy", "plankton",
 _IPDICT = {
     "spongebob": "192.168.1.3",  "gary":        "192.168.1.6",
     "patrick":   "192.168.1.4",  "sandy":       "192.168.1.5",
-    "plankton":  "192.168.1.12", "mermaidman":  "169.254.51.129",
-    "barnacleboy": "192.168.1.9","krabs":       "169.254.6.231",
+    "plankton":  "192.168.1.9",  "mermaidman":  "169.254.51.129",
+    "barnacleboy": "192.168.1.7","krabs":       "169.254.6.231",
     "pearl":     "169.254.219.11","squidward":  "169.254.195.106",
 }
 _REV_IPDICT = {v: k for k, v in _IPDICT.items()}
